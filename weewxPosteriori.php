@@ -5,15 +5,6 @@
  * MySQL, avec détection auto des unités et conversion
 */
 
-/*
- * En CLI :
- * php /home/pi/weewxPosteriori/weewxPosteriori.php --station-bdd=station --station-id=id
- * 
-*/
-
-// CONFIG
-	require_once "config.php";
-
 // GO -- NE PLUS TOUCHER
 
 // Timestamp debut du script
@@ -22,14 +13,145 @@
 // Date UTC
 	date_default_timezone_set('UTC');
 
-// CONF STATION
+// CONF STATION CLI
 	$paramsCli = getopt(null, array(
-		'station-bdd:',
-		'station-id:',
+		'debug',           // SQLite ET MySQL - PAS DE VALEUR ATTENDUE
+		'db-type:',        // SQLite ET MySQL
+		'db-file:',        // SQLite
+		'db-table:',       // SQLite ET MySQL
+		'db-host:',        // MySQL
+		'db-user:',        // MySQL
+		'db-pass:',        // MySQL
+		'db-name:',        // MySQL
+		'id-station:',     // SQLite ET MySQL
+		'repo-csv:',       // SQLite ET MySQL
+		'periode-recup:',  // SQLite ET MySQL
+		'intvl-recup:',    // SQLite ET MySQL
+		'ftp-enable',      // SQLite ET MySQL - PAS DE VALEUR ATTENDUE 
+		'ftp-server:',     // SQLite ET MySQL
+		'ftp-user:',       // SQLite ET MySQL
+		'ftp-pass:',       // SQLite ET MySQL
 	));
-	//var_dump($options);
-	$db_name_mysql = $paramsCli['station-bdd'];
-	$id_station = $paramsCli['station-id'];
+
+	// Récup des params en CLI ou dans le fichier de conf ?
+
+	// Debug CLI
+	if (isset($paramsCli['debug'])) {
+		$debug = True;
+	} else {
+		$debug = False;
+	}
+
+	if ($debug) {
+		var_dump($paramsCli);
+	}
+
+	// Type BDD CLI
+	if (!isset($paramsCli['db-type'])) {
+		if ($debug) {
+			echo "Info : Type de BDD non précisé, les autres paramètres de la ligne de commande sont ignorés : utilisation du fichier de conf".PHP_EOL.PHP_EOL;
+		}
+		require_once "config.php";
+	} else {
+		if ($paramsCli['db-type'] === "sqlite") {
+			if ($debug) {
+				echo "Info : Params spécifié en CLI, pas de fichier de conf".PHP_EOL;
+				echo "Info : BDD SQLite".PHP_EOL.PHP_EOL;
+			}
+			$db_type = "sqlite";
+			if (isset($paramsCli['db-file'])) {
+				$db_file = $paramsCli['db-file'];
+			} else {
+				exit("ERRO : params db-file non défini ou invalide\n");
+			}
+			if (isset($paramsCli['db-table'])) {
+				$db_table_sqlite = $paramsCli['db-table'];
+			} else {
+				exit("ERRO : params db-table non défini ou invalide\n");
+			}
+		} elseif ($paramsCli['db-type'] === "mysql") {
+			if ($debug) {
+				echo "Info : Params spécifié en CLI, pas de fichier de conf".PHP_EOL;
+				echo "Info : BDD MySQL".PHP_EOL.PHP_EOL;
+			}
+			$db_type = "mysql";
+			if (isset($paramsCli['db-host'])) {
+				$db_host = $paramsCli['db-host'];
+			} else {
+				exit("ERRO : params db-host non défini ou invalide\n");
+			}
+			if (isset($paramsCli['db-user'])) {
+				$db_user = $paramsCli['db-user'];
+			} else {
+				exit("ERRO : params db-user non défini ou invalide\n");
+			}
+			if (isset($paramsCli['db-pass'])) {
+				$db_pass = $paramsCli['db-pass'];
+			} else {
+				exit("ERRO : params db-pass non défini ou invalide\n");
+			}
+			if (isset($paramsCli['db-name'])) {
+				$db_name_mysql = $paramsCli['db-name'];
+			} else {
+				exit("ERRO : params db-name non défini ou invalide\n");
+			}
+			if (isset($paramsCli['db-table'])) {
+				$db_table_mysql = $paramsCli['db-table'];
+			}
+			else {
+				exit("ERRO : params db-table non défini ou invalide\n");
+			}
+		} else {
+			exit("ERRO : params db-type invalide\n");
+		}
+
+		// Params RECUP CLI
+		if (isset($paramsCli['periode-recup'])) {
+			$periodeRecup = $paramsCli['periode-recup'];
+		} else {
+			exit("ERRO : params periode-recup non défini ou invalide\n");
+		}
+		if (isset($paramsCli['intvl-recup']) && $paramsCli['intvl-recup'] == 10 | $paramsCli['intvl-recup'] == 60) {
+			$intervalRecup = $paramsCli['intvl-recup'];
+		} else {
+			exit("ERRO : params intvl-recup non défini ou invalide\n");
+		}
+
+		// Params communs CLI
+		if (isset($paramsCli['id-station'])) {
+			$id_station = $paramsCli['id-station'];
+		} else {
+			exit("ERRO : params id-station non défini ou invalide\n");
+		}
+		if (isset($paramsCli['repo-csv'])) {
+			$repository = $paramsCli['repo-csv'];
+		} else {
+			exit("ERRO : params repo-csv non défini ou invalide\n");
+		}
+
+		// Params FTP CLI
+		if (isset($paramsCli['ftp-enable']) ) {
+			$ftp_enable = True;
+			if (isset($paramsCli['ftp-server'])) {
+				$ftp_server = $paramsCli['ftp-server'];
+			} else {
+				exit("ERRO : params ftp-server non défini ou invalide\n");
+			}
+			if (isset($paramsCli['ftp-user'])) {
+				$ftp_username = $paramsCli['ftp-user'];
+			} else {
+				exit("ERRO : params ftp-user non défini ou invalide\n");
+			}
+			if (isset($paramsCli['ftp-pass'])) {
+				$ftp_password = $paramsCli['ftp-pass'];
+			} else {
+				exit("ERRO : params ftp-pass non défini ou invalide\n");
+			}
+		} else {
+			$ftp_enable = False;
+		}
+	}
+
 
 // Définition du nom de la table en fonction du type de BDD utilisé
 	if ($db_type === "sqlite") {
@@ -686,21 +808,32 @@
 	}
 
 	// Insert dans le fichier CSV
-	$csvFile = $folder."/weewxPosteriori_".$id_station.".csv";
+	$csvFile = $repository."/weewxPosteriori_".$id_station.".csv";
 	$fp      = fopen($csvFile, 'w');
 	foreach ($prepareCSV as $fields) {
 		fputcsv($fp, $fields);
 	}
-	fclose($fp);
+	$fcloseOK = fclose($fp);
+
+	if ($debug && $fcloseOK) {
+		echo "Fin de l'écriture du fichier : ".$csvFile.PHP_EOL;
+	}
 
 	// Push du fichier sur le FTP IC
 	if ($ftp_enable) {
-		passthru("gzip -f ${csvFile}");
+		passthru("gzip -fc ${csvFile} > ${csvFile}.gz");
 		$conn_id = ftp_connect($ftp_server) or die("Connexion impossible à $ftp_server");
 		if (!@ftp_login($conn_id, $ftp_username, $ftp_password)) { die("Identifiants FTP incorects");}
 		$remote = "weewxPosteriori_".$id_station.".csv.gz";
-		ftp_put($conn_id, $remote, $csvFile.".gz", FTP_ASCII);
+		$ftpPut = ftp_put($conn_id, $remote, $csvFile.".gz", FTP_ASCII);
 		ftp_close($conn_id);
+		if ($debug && $ftpPut) {
+			echo "Fichier ".$csvFile." envoyé avec succès (et compressé) sur ".$ftp_server."\n";
+		}
+	} else {
+		if ($debug) {
+			echo "Envoi FTP désactivé.\n";
+		}
 	}
 
 	// FIN
