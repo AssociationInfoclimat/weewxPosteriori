@@ -81,10 +81,12 @@ nano config.php
 > Ne pas modifier le fichier ``weewxPosteriori.php``, toute la configuration se trouve dans le script ``config.php``
 
 **Debug et période de récup**
-> ``$periodeRecup`` permet d'indiquer sur combien de temps en arrière on souhaite retourner pour la génération du fichier. Au choix entre une heure et XXX jours.  
-> ``$intervalRecup`` permet d'indiquer l'intervalle de temps voulu entre chaque enregistrement pour la génération du fichier. Deux options possibles : 10 minutes, ou 60 minutes
->
-> La combinaison des deux permet d'affiner le type de récupération voulu. Plus on augmente la période de récupération (et surtout si l'intervalle de récup est configuré à 10 minutes), plus le fichier sera lourd. A prendre en compte sur des installations avec débit Internet réduit.
+> ``$periodeRecup`` permet d'inquer la période couverte par le script, c'est à dire sur combien de temps en arrière on souhaite retourner pour la génération du fichier. Au choix entre une heure et XXX jours. Doit **absolument** être en secondes.
+Exemple pour une période de 2 heures il faudra indiquer ``2 * 3600``, ou pour une période de trois jours ``3 * 24 * 3600``
+
+> ``$intervalRecup`` permet d'indiquer l'intervalle de temps voulu entre chaque enregistrement pour la génération du fichier. **Deux options possibles : 10 minutes, ou 60 minutes**
+
+> La combinaison des deux permet d'affiner le type de récupération/envoi voulu. Plus on augmente la période de récupération (et surtout si l'intervalle de récup est configuré à 10 minutes), plus le fichier sera lourd. A prendre en compte sur des installations avec débit Internet réduit.
 
 **Type de base de données**
 > Ici il faut renseigné le type de base de données utilisé par votre instance de WeeWX.
@@ -100,7 +102,7 @@ nano config.php
 
 **Paramètres de connexion à la base de données**
 > En fonction de votre choix précédent il va falloir renseigner différemment cette partie :
-> * Si vous avez une base de données SQLite, il suffit d'indiquer l'emplacement du fichier SQLite, et le nom de la table principal. Pour ce dernier paramètre, il est probable que vous ne l'ayez pas changé et qu'il soit ``archive`` :
+> * **Si vous avez une base de données SQLite**, il suffit d'indiquer l'emplacement du fichier SQLite, et le nom de la table principal. Pour ce dernier paramètre, il est probable que vous ne l'ayez pas changé et qu'il soit ``archive`` :
 > ```
 > $db_file = '/var/lib/weewx/weewx.sdb';
 > $db_table_sqlite = 'archive';
@@ -108,7 +110,7 @@ nano config.php
 > L'emplacement de ce fichier peut varier en fonction de votre méthode d'installation de WeeWX. Référer vous à la documentation [d'installation de WeeWX](http://www.weewx.com/docs/usersguide.htm#installation_methods).
 >
 >
-> * Si vous avez une base de données MySQL, il va falloir renseigner les paramètres de connexion à la base :
+> * **Si vous avez une base de données MySQL**, il va falloir renseigner les paramètres de connexion à la base :
 > ```
 > $db_host = 'localhost';
 > $db_user = 'weewx';
@@ -118,12 +120,12 @@ nano config.php
 > ```
 >
 > * ``db_host`` : qui est l'adresse de l'hôte de la base de données. Probablement ``localhost`` si la base de données est hébergée sur votre Raspberry Pi
-> * ``db_user`` : le nom d'utilisateur qui a accès à la BDD **en lecture seule de préférence** !
+> * ``db_user`` : le nom d'utilisateur qui a accès à la BDD **en lecture seule de préférence, cf la note ci-après** !
 > * ``db_pass`` : le mot de passe de cet utilisateur ;
 > * ``db_name_mysql`` : le nom de la base de données. Par défaut WeeWX la nomme ``weewx`` ;
 > * ``db_table_mysql`` : Ici il s'agit du nom de la première table contenant tous les enregistrements. Par défaut WeeWX la nomme ``archive``.
 >
-> Vous pouvez renseigner les même paramètres de connexion que ceux de votre fichier de configuration de WeeWX, mais ce n'est pas recommandé car l'utilisateur ``weewx`` a les droits d'écritures sur la base. L'idéal est plutôt de créer un autre utilisateur avec seulement les droits de lecture sur la base de données (select).
+> Vous pouvez renseigner les même paramètres de connexion que ceux de votre fichier de configuration de WeeWX, mais ce n'est pas recommandé car l'utilisateur ``weewx`` a les droits d'écritures sur la base. L'idéal est plutôt de créer un autre utilisateur avec **seulement les droits de lecture sur la base de données (select)**.
 > Cependant, cela fonctionnera aussi avec l'utilisateur ``weewx``.
 
 **Informations d'enregistrement du fichier**
@@ -132,13 +134,13 @@ nano config.php
 > ```
 > $id_station = '0001';
 > ```
-> Avec l'exemple ci-dessus, le nom du fichier sera : ``weewxPosteriori_0001``.
+> Avec l'exemple ci-dessus, le nom du fichier sera : ``weewxPosteriori_0001.csv``.
 >
 > Il faut maintenant renseigner le répertoire d'enregistrement :
 > ```
-> $folder = "/var/www/html/IC/";
+> $repository = "/var/www/html/IC/";
 > ```
-> Vous pouvez ici renseigner n'importe quel répertoire **existant** sur votre Raspberry Pi. Ou metre ceci pour enregistrer dans la RAM (fichier temporaire) : ``/dev/shm/``
+> Vous pouvez ici renseigner n'importe quel répertoire **existant** sur votre Raspberry Pi. Ou metre ceci pour enregistrer dans la RAM (fichier temporaire) : ``/dev/shm/``, ce qui est préférable pour un fichier temporaire comme celui-ci qui sera réécrit très régulièrement.
 
 **FTP Infoclimat**
 > Enfin, cette partie concerne la configuration de la connexion au FTP de l'association Infoclimat. Ces identifiants sont à demander directement à l'équipe lors de la demande d'intégration de votre station.  
@@ -173,6 +175,19 @@ Pour l'automatiser une seule fois par jour à 23h01 :
 01 23 * * * php /home/pi/weewxPosteriori/weewxPosteriori.php
 ```
 
+### Options avancées d'automatisation
+
+Il vous est également possible de faire fonctionner ce script sans utiliser le fichier de configuration, et en entrant toute la configuration en paramètre de la ligne de commande.  
+
+Exemple pour un fonctionnement normal sans debug pour obtenir un fichier sur les deux dernières heures (intervalle de 10 minutes) depuis une base de données MySQL et sans envoi FTP
+```
+php /home/pi/weewxPosteriori/weewxPosteriori.php --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --intvl-recup=10 --id-station="id_station" --repo-csv="/dev/shm/"
+```
+
+Exemple avec du debug pour obtenir un fichier sur les deux dernières heures (intervalle de 10 minutes) depuis une base de données MySQL et avec envoi FTP
+```
+php /home/pi/weewxPosteriori/weewxPosteriori.php --debug --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --intvl-recup=10 --id-station="id_station" --repo-csv="/dev/shm/" --ftp-enable --ftp-server="ftp.infoclimat.fr" --ftp-user="pseudo" --ftp-pass="passe"
+```
 
 ## Mise à jour du script
 
@@ -209,3 +224,7 @@ C'est tout, le script est de nouveau fonctionnel !
 ## Changelog
 * V1.0 - 2020.02.07
     * Premier dépôt du script
+* V1.1 - 2020.03.17
+	* Ajout d'options en CLI
+	* Amélioration du readme
+	* Ajout de débug dans l'écriture du fichier et l'envoi FTP
