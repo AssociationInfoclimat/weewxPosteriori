@@ -5,6 +5,8 @@
  * MySQL, avec détection auto des unités et conversion
 */
 
+// VERSION : V1.1
+
 /*
  * Pour lancer le script, après avoir modifier les valeurs par défaut du fichier de configuration -ci-dessous- : 
  * php /home/pi/weewxPosteriori/weewxPosteriori.php
