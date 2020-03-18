@@ -264,7 +264,7 @@
 
 // CSV FILE PUSH HEADER
 	$prepareCSV = array();
-	$prepareCSV[] = array ('dateTime', 'TempNow', 'HrNow', 'TdNow', 'barometerNow', 'rainRateNow', 'radiationNow', 'UvNow', 'Tn', 'Tx', 'rainCumul', 'rainRateMax', 'radiationMax', 'UvMax', 'windGustMax1h', 'windGustMaxDir1h', 'windGustMaxdt1h', 'windGustMax10min', 'windGustMaxDir10min', 'windGustMaxdt10min', 'windSpeedAvg10min', 'windDirAvg10min', 'rainCumulMonth', 'rainCumulYear');
+	$prepareCSV[] = array ('dateTime', 'TempNow', 'HrNow', 'TdNow', 'barometerNow', 'rainRateNow', 'radiationNow', 'UvNow', 'Tn', 'Tx', 'rainCumul', 'rainRateMax', 'radiationMax', 'UvMax', 'windGustMax1h', 'windGustMaxDir1h', 'windGustMaxdt1h', 'windGustMax10min', 'windGustMaxDir10min', 'windGustMaxdt10min', 'windSpeedAvg10min', 'windDirAvg10min', 'rainCumul1Hour', 'rainCumul3Hour', 'rainCumul6Hour', 'rainCumul12Hour', 'rainCumul24Hour', 'rainCumulMonth', 'rainCumulYear');
 
 // Établissement des timestamp stop et start
 	$query_string = "SELECT `dateTime` FROM $db_table ORDER BY `dateTime` DESC LIMIT 1;";
@@ -564,8 +564,9 @@
 			}
 		}
 
-		// Récup rafales max et sa direction sur une heure glissante
-		$query_string = "SELECT `dateTime`, `windGust`, `windGustDir` FROM $db_table WHERE `dateTime` > '$tsStartActu' AND `dateTime` <= '$tsStopActu' AND windGust = (SELECT MAX(`windGust`) FROM $db_table WHERE `dateTime` > '$tsStartActu' AND `dateTime` <= '$tsStopActu');";
+		// Récup rafales max et sa direction sur une heure glissante peu importe l'intervalle
+		$tsStart1hour = $tsStopActu-(60*60);
+		$query_string = "SELECT `dateTime`, `windGust`, `windGustDir` FROM $db_table WHERE `dateTime` > '$tsStart1hour' AND `dateTime` <= '$tsStopActu' AND windGust = (SELECT MAX(`windGust`) FROM $db_table WHERE `dateTime` > '$tsStart1hour' AND `dateTime` <= '$tsStopActu');";
 		$result       = $db_handle->query($query_string);
 		if (!$result && $debug) {
 			// Erreur et debug activé
@@ -598,7 +599,7 @@
 			}
 		}
 
-		// Récup rafales max et sa direction sur les dix dernières minutes
+		// Récup rafales max et sa direction sur les dix dernières minutes peu importe l'intervalle
 		$tsStart10min = $tsStopActu-(10*60);
 		$query_string = "SELECT `dateTime`, `windGust`, `windGustDir` FROM $db_table WHERE `dateTime` > '$tsStart10min' AND `dateTime` <= '$tsStopActu' AND windGust = (SELECT MAX(`windGust`) FROM $db_table WHERE `dateTime` > '$tsStart10min' AND `dateTime` <= '$tsStopActu');";
 		$result       = $db_handle->query($query_string);
@@ -703,6 +704,161 @@
 			}
 		}
 
+		// Cumul pluie sur l'heure glissante peu importe l'intervalle de récup
+		$tsStart1hour = $tsStopActu-(60*60);
+		$query_string = "SELECT SUM(`rain`) AS `rainCumul1Hour` FROM $db_table WHERE `dateTime` > '$tsStart1hour' AND `dateTime` <= '$tsStopActu';";
+		$result       = $db_handle->query($query_string);
+		if (!$result && $debug) {
+			// Erreur et debug activé
+			echo "Erreur dans la requete ".$query_string.PHP_EOL;
+			if ($db_type === "sqlite") {
+				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
+			} elseif ($db_type === "mysql") {
+				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
+			}
+		}
+		if ($result) {
+			if ($db_type === "sqlite") {
+				$row = $result->fetchArray(SQLITE3_ASSOC);
+			} elseif ($db_type === "mysql") {
+				$row = mysqli_fetch_assoc($result);
+			}
+			$rainCumul1Hour = null;
+			if (!is_null ($row['rainCumul1Hour'])) {
+				if ($unit == '1') {
+					$rainCumul1Hour = round($row['rainCumul1Hour']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul1Hour = round($row['rainCumul1Hour']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul1Hour = round($row['rainCumul1Hour'],1);
+				}
+			}
+		}
+
+		// Cumul pluie sur 3 heures glissante peu importe l'intervalle de récup
+		$tsStart3hour = $tsStopActu-(3*60*60);
+		$query_string = "SELECT SUM(`rain`) AS `rainCumul3Hour` FROM $db_table WHERE `dateTime` > '$tsStart3hour' AND `dateTime` <= '$tsStopActu';";
+		$result       = $db_handle->query($query_string);
+		if (!$result && $debug) {
+			// Erreur et debug activé
+			echo "Erreur dans la requete ".$query_string.PHP_EOL;
+			if ($db_type === "sqlite") {
+				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
+			} elseif ($db_type === "mysql") {
+				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
+			}
+		}
+		if ($result) {
+			if ($db_type === "sqlite") {
+				$row = $result->fetchArray(SQLITE3_ASSOC);
+			} elseif ($db_type === "mysql") {
+				$row = mysqli_fetch_assoc($result);
+			}
+			$rainCumul3Hour = null;
+			if (!is_null ($row['rainCumul3Hour'])) {
+				if ($unit == '1') {
+					$rainCumul3Hour = round($row['rainCumul3Hour']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul3Hour = round($row['rainCumul3Hour']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul3Hour = round($row['rainCumul3Hour'],1);
+				}
+			}
+		}
+
+		// Cumul pluie sur 6 heures glissante peu importe l'intervalle de récup
+		$tsStart6hour = $tsStopActu-(6*60*60);
+		$query_string = "SELECT SUM(`rain`) AS `rainCumul6Hour` FROM $db_table WHERE `dateTime` > '$tsStart6hour' AND `dateTime` <= '$tsStopActu';";
+		$result       = $db_handle->query($query_string);
+		if (!$result && $debug) {
+			// Erreur et debug activé
+			echo "Erreur dans la requete ".$query_string.PHP_EOL;
+			if ($db_type === "sqlite") {
+				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
+			} elseif ($db_type === "mysql") {
+				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
+			}
+		}
+		if ($result) {
+			if ($db_type === "sqlite") {
+				$row = $result->fetchArray(SQLITE3_ASSOC);
+			} elseif ($db_type === "mysql") {
+				$row = mysqli_fetch_assoc($result);
+			}
+			$rainCumul6Hour = null;
+			if (!is_null ($row['rainCumul6Hour'])) {
+				if ($unit == '1') {
+					$rainCumul6Hour = round($row['rainCumul6Hour']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul6Hour = round($row['rainCumul6Hour']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul6Hour = round($row['rainCumul6Hour'],1);
+				}
+			}
+		}
+
+		// Cumul pluie sur 12 heures glissante peu importe l'intervalle de récup
+		$tsStart12hour = $tsStopActu-(12*60*60);
+		$query_string = "SELECT SUM(`rain`) AS `rainCumul12Hour` FROM $db_table WHERE `dateTime` > '$tsStart12hour' AND `dateTime` <= '$tsStopActu';";
+		$result       = $db_handle->query($query_string);
+		if (!$result && $debug) {
+			// Erreur et debug activé
+			echo "Erreur dans la requete ".$query_string.PHP_EOL;
+			if ($db_type === "sqlite") {
+				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
+			} elseif ($db_type === "mysql") {
+				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
+			}
+		}
+		if ($result) {
+			if ($db_type === "sqlite") {
+				$row = $result->fetchArray(SQLITE3_ASSOC);
+			} elseif ($db_type === "mysql") {
+				$row = mysqli_fetch_assoc($result);
+			}
+			$rainCumul12Hour = null;
+			if (!is_null ($row['rainCumul12Hour'])) {
+				if ($unit == '1') {
+					$rainCumul12Hour = round($row['rainCumul12Hour']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul12Hour = round($row['rainCumul12Hour']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul12Hour = round($row['rainCumul12Hour'],1);
+				}
+			}
+		}
+
+		// Cumul pluie sur 24 heures glissante peu importe l'intervalle de récup
+		$tsStart24hour = $tsStopActu-(24*60*60);
+		$query_string = "SELECT SUM(`rain`) AS `rainCumul24Hour` FROM $db_table WHERE `dateTime` > '$tsStart24hour' AND `dateTime` <= '$tsStopActu';";
+		$result       = $db_handle->query($query_string);
+		if (!$result && $debug) {
+			// Erreur et debug activé
+			echo "Erreur dans la requete ".$query_string.PHP_EOL;
+			if ($db_type === "sqlite") {
+				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
+			} elseif ($db_type === "mysql") {
+				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
+			}
+		}
+		if ($result) {
+			if ($db_type === "sqlite") {
+				$row = $result->fetchArray(SQLITE3_ASSOC);
+			} elseif ($db_type === "mysql") {
+				$row = mysqli_fetch_assoc($result);
+			}
+			$rainCumul24Hour = null;
+			if (!is_null ($row['rainCumul24Hour'])) {
+				if ($unit == '1') {
+					$rainCumul24Hour = round($row['rainCumul24Hour']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul24Hour = round($row['rainCumul24Hour']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul24Hour = round($row['rainCumul24Hour'],1);
+				}
+			}
+		}
+
 		// Calcul RAIN cumul month
 		// Premier jour de ce mois
 		$dtStartMonth = date('Y-m-01 00:00:00', strtotime($dtStartActu)); // $dtStartActu = le ts de début de l'interval en cours
@@ -786,6 +942,7 @@
 			echo "CLIMATO		| Tn : ".$Tn."°C".PHP_EOL;
 			echo "		| Tx : ".$Tx."°C".PHP_EOL;
 			echo "		| rainCumul : ".$rainCumul." mm".PHP_EOL;
+			echo "		| rainCumulHour : ".$rainCumul1Hour." mm".PHP_EOL;
 			echo "		| rainCumulMonth : ".$rainCumulMonth." mm".PHP_EOL;
 			echo "		| rainCumulYear : ".$rainCumulYear." mm".PHP_EOL;
 			echo "		| rainRateMax : ".$rainRateMax." mm".PHP_EOL;
@@ -806,7 +963,7 @@
 		}
 
 		// Insert dans le tableau des valeurs
-		$prepareCSV[] = array ($dtStopActu, $tempNow, $HrNow, $TdNow, $barometerNow, $rainRateNow, $radiationNow, $UvNow, $Tn, $Tx, $rainCumul, $rainRateMax, $radiationMax, $UvMax, $windGustMax1h, $windGustMaxDir1h, $windGustMaxdt1h, $windGustMax10min, $windGustMaxDir10min, $windGustMaxdt10min, $windSpeedAvg10min, $windDirAvg10min, $rainCumulMonth, $rainCumulYear);
+		$prepareCSV[] = array ($dtStopActu, $tempNow, $HrNow, $TdNow, $barometerNow, $rainRateNow, $radiationNow, $UvNow, $Tn, $Tx, $rainCumul, $rainRateMax, $radiationMax, $UvMax, $windGustMax1h, $windGustMaxDir1h, $windGustMaxdt1h, $windGustMax10min, $windGustMaxDir10min, $windGustMaxdt10min, $windSpeedAvg10min, $windDirAvg10min, $rainCumul1Hour, $rainCumul3Hour, $rainCumul6Hour, $rainCumul12Hour, $rainCumul24Hour, $rainCumulMonth, $rainCumulYear);
 	}
 
 	// Insert dans le fichier CSV
