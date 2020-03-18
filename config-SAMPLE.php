@@ -5,7 +5,7 @@
  * MySQL, avec détection auto des unités et conversion
 */
 
-// VERSION : V1.1
+// VERSION : V1.2
 
 /*
  * Pour lancer le script, après avoir modifier les valeurs par défaut du fichier de configuration -ci-dessous- : 

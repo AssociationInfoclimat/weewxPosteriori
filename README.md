@@ -224,7 +224,12 @@ C'est tout, le script est de nouveau fonctionnel !
 ## Changelog
 * V1.0 - 2020.02.07
     * Premier dépôt du script
+
 * V1.1 - 2020.03.17
 	* Ajout d'options en CLI
 	* Amélioration du readme
 	* Ajout de débug dans l'écriture du fichier et l'envoi FTP
+
+* V1.2 - 2020.03.18
+	* Ajout du cumul de pluie 1h, 3h, 6h, 12h, 24h
+	* Correctif sur le calcul de la rafale max et sa direction sur une heure glissante (l'heure glissante n'était pas respecté si l'intervalle de récup était configuré sur 10 minutes)

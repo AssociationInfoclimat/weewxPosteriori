@@ -7,7 +7,7 @@
 
 // GO -- NE PLUS TOUCHER
 
-// VERSION : V1.1
+// VERSION : V1.2
 
 // Timestamp debut du script
 	$timeStartScript = microtime(true);
