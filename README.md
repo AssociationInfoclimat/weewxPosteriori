@@ -34,21 +34,37 @@ Le fichier CSV de sortie comprend de nombreuses colonnes dont voici le descripti
 * ``barometerNow``, --> idem pour la pression atmosphérique
 * ``rainRateNow``, --> idem pour l'intensité de précipitations
 * ``radiationNow``, --> idem pour le rayonnement solaire
-* ``UvNow``, --> idem pour l'indice UV
-* ``Tn``, --> la température minimal sur l'intervalle en cours
-* ``Tx``, --> la température maximal sur l'intervalle en cours
-* ``rainCumul``, --> le cumul de pluie sur l'intervalle en cours
-* ``rainRateMax``, --> l'intensité de précipitations max sur l'intervalle en cours
-* ``radiationMax``, --> le rayonnement max sur l'intervalle en cours
-* ``UvMax``, --> l'UV max sur l'intervalle en cours
+* ``UvNow``, --> idem pour l'indice UV  
+--
+* ``Tn10m``, --> la température minimale sur les 10 dernières minutes
+* ``Tx10m``, --> la température maximale sur les 10 dernières minutes
+* ``rainCumul10m``, --> le cumul de pluie sur les 10 dernières minutes
+* ``rainRateMax10m``, --> l'intensité de précipitations max sur les 10 dernières minutes
+* ``radiationMax10m``, --> le rayonnement max sur les 10 dernières minutes
+* ``UvMax10m``, --> l'UV max sur les 10 dernières minutes  
+--
 * ``windGustMax1h``, --> la rafale de vent max sur une heure (si intervalle de une heure, c'est sur l'heure glissante, si intervalle de 10 minutes, c'est aussi sur l'heure glissante) (cf norme OMM)
 * ``windGustMaxDir1h``, --> la direction de la rafale de vent max selectionnée dans le paramètre précédent
 * ``windGustMaxdt1h``, --> l'heure exacte (UTC) de la rafale de vent max selectionnée dans le paramètre précédent
-* ``windGustMax10min``, --> la rafale de vent max sur les dix dernières minutes (peu importe la configuration de l'intervalle) (cf norme OMM)
-* ``windGustMaxDir10min``, --> la direction de la rafale de vent max sur les dix dernières minutes, selectionnée dans le paramètre précédent
-* ``windGustMaxdt10min``, --> l'heure exacte (UTC) de la rafale de vent max sur les dix dernières minutes selectionnée dans le paramètre précédent
-* ``windSpeedAvg10min``, --> la moyenne du vent moyen des dix dernières minutes
-* ``windDirAvg10min``, --> la direction de la moyenne du vent moyen des dix dernières minutes
+* ``windGustMax10m``, --> la rafale de vent max sur les dix dernières minutes (peu importe la configuration de l'intervalle) (cf norme OMM)
+* ``windGustMaxDir10m``, --> la direction de la rafale de vent max sur les dix dernières minutes, selectionnée dans le paramètre précédent
+* ``windGustMaxdt10m``, --> l'heure exacte (UTC) de la rafale de vent max sur les dix dernières minutes selectionnée dans le paramètre précédent
+* ``windSpeedAvg10m``, --> la moyenne du vent moyen des dix dernières minutes
+* ``windDirAvg10m``, --> la direction de la moyenne du vent moyen des dix dernières minutes  
+--
+* ``Tn1h``, --> la température minimale sur la dernière heure
+* ``Tx1h``, --> la température maximale sur la dernière heure
+* ``rainCumul1h``, --> le cumul de pluie sur la dernière heure
+* ``rainRateMax1h``, --> l'intensité de précipitations max sur la dernière heure
+* ``radiationMax1h``, --> le rayonnement max sur la dernière heure
+* ``UvMax1h``, --> l'UV max sur la dernière heure  
+--
+* ``Tn12h``, --> la température minimale sur les 12 dernière heure
+* ``Tx12h``, --> la température maximale sur les 12 dernière heure
+* ``rainCumul3h``, --> le cumul de pluie sur les 3 dernières heures
+* ``rainCumul6h``, --> le cumul de pluie sur les 6 dernières heures
+* ``rainCumul12h``, --> le cumul de pluie sur les 12 dernières heures
+* ``rainCumul24h``, --> le cumul de pluie sur les 24 dernières heures
 * ``rainCumulMonth``, --> le cumul de pluie sur le mois en cours (depuis minuit UTC du 1er du mois (non inclus) jusqu'à l'enregistrement en cours INCLUS (``dateTime``))
 * ``rainCumulYear`` --> le cumul de pluie sur l'année en cours (depuis minuit UTC du 1er janvier (non inclus) jusqu'à l'enregistrement en cours INCLUS(``dateTime``))
 
@@ -233,3 +249,7 @@ C'est tout, le script est de nouveau fonctionnel !
 * V1.2 - 2020.03.18
 	* Ajout du cumul de pluie 1h, 3h, 6h, 12h, 24h
 	* Correctif sur le calcul de la rafale max et sa direction sur une heure glissante (l'heure glissante n'était pas respecté si l'intervalle de récup était configuré sur 10 minutes)
+
+* V1.3 - 2020.03.19
+	* Modification de la structure et des types de paramètres calculés (maintenant quasiment tous les paramètres sont calculés sur 10 min et sur 1 heure, quel que soit l'intervalle de récup voulu)
+	* @ToDo : réduire le nombre de requêtes et boucles pour améliorer les performances
