@@ -1,4 +1,8 @@
 <?php
+// error_reporting(E_ALL);
+// ini_set('display_errors', TRUE);
+// ini_set('display_startup_errors', TRUE);
+
 /*
  * Génération d'un CSV pour la récupération à posteriori sur Infoclimat
  * des données issues d'une base de données locales WeeWX sous SQLite ou
@@ -7,7 +11,7 @@
 
 // GO -- NE PLUS TOUCHER
 
-// VERSION : V1.3
+// VERSION : V1.99
 
 // Timestamp debut du script
 	$timeStartScript = microtime(true);
@@ -28,7 +32,6 @@
 		'id-station:',     // SQLite ET MySQL
 		'repo-csv:',       // SQLite ET MySQL
 		'periode-recup:',  // SQLite ET MySQL
-		'intvl-recup:',    // SQLite ET MySQL
 		'ftp-enable',      // SQLite ET MySQL - PAS DE VALEUR ATTENDUE 
 		'ftp-server:',     // SQLite ET MySQL
 		'ftp-user:',       // SQLite ET MySQL
@@ -113,11 +116,6 @@
 		} else {
 			exit("ERRO : params periode-recup non défini ou invalide\n");
 		}
-		if (isset($paramsCli['intvl-recup']) && $paramsCli['intvl-recup'] == 10 | $paramsCli['intvl-recup'] == 60) {
-			$intervalRecup = $paramsCli['intvl-recup'];
-		} else {
-			exit("ERRO : params intvl-recup non défini ou invalide\n");
-		}
 
 		// Params communs CLI
 		if (isset($paramsCli['id-station'])) {
@@ -166,23 +164,25 @@
 // Connection à la BDD
 	if ($db_type === "sqlite") {
 		try {
-			// Connection
-			$db_handle = new SQLite3($db_file);
-		}
-		catch (Exception $exception) {
-			// sqlite3 throws an exception when it is unable to connect
-			echo "Erreur de connexion à la base de données SQLite".PHP_EOL;
-			if ($debug) {
-				echo $exception->getMessage().PHP_EOL.PHP_EOL;
-				exit();
-			}
+			$db_handle_pdo = new PDO("sqlite:$db_file");
+			// Activation des erreurs PDO
+			$db_handle_pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			// mode de fetch par défaut : FETCH_ASSOC / FETCH_OBJ / FETCH_BOTH
+			$db_handle_pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+			// Ajout de la fonction ceil pour SQLite
+			$db_handle_pdo->sqliteCreateFunction('ceil', 'ceil', 1);
+		} catch (PDOException $exception) {
+			echo 'Échec lors de la connexion : ' . $exception->getMessage();
 		}
 	} elseif ($db_type === "mysql") {
-		$db_handle = mysqli_connect($db_host,$db_user,$db_pass,$db_name);
-		// Vérification de la connexion
-		if ($db_handle->connect_errno && $debug) {
-			printf("Echec de la connexion: %s\n", $db_handle->connect_error);
-			exit();
+		try {
+			$db_handle_pdo = new PDO("mysql:host=$db_host;dbname=$db_name", $db_user, $db_pass);
+			// Activation des erreurs PDO
+			$db_handle_pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			// mode de fetch par défaut : FETCH_ASSOC / FETCH_OBJ / FETCH_BOTH
+			$db_handle_pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+		} catch (PDOException $exception) {
+			echo 'Échec lors de la connexion : ' . $exception->getMessage();
 		}
 	}
 
@@ -196,12 +196,7 @@
 	 * @return \DateTime
 	 */
 	function roundDownToMinuteInterval(\DateTime $dateTime) {
-		global $intervalRecup;
-		if ($intervalRecup == 10) {
-			$minuteInterval = 10;
-		} elseif ($intervalRecup == 60) {
-			$minuteInterval = 60;
-		}
+		$minuteInterval = 10;
 		return $dateTime->setTime(
 			$dateTime->format('H'),
 			floor($dateTime->format('i') / $minuteInterval) * $minuteInterval,
@@ -209,27 +204,7 @@
 		);
 	}
 
-// FONCTION : RECUP des intervalles à traiter
-	function getDatesFromRange($start, $end, $format = 'Y-m-d H:i:00') {
-		global $intervalRecup;
-		$array = array();
-		if ($intervalRecup == 10) {
-			$interval = new DateInterval('PT10M');
-		} elseif ($intervalRecup == 60) {
-			$interval = new DateInterval('PT1H');
-		}
 
-		$realEnd = new DateTime($end);
-		$realEnd->add($interval);
-
-		$period = new DatePeriod(new DateTime($start), $interval, $realEnd);
-
-		foreach($period as $date) {
-			$array[] = $date->format($format);
-		}
-
-		return $array;
-	}
 
 // FONCTION moyenne d'angles angulaires
 	function mean_of_angles( $angles, $degrees = true ) {
@@ -261,33 +236,22 @@
 ##### MAIN
 ###############################################################
 
-
-// CSV FILE PUSH HEADER
-	$prepareCSV = array();
-	$prepareCSV[] = array ('dateTime', 'TempNow', 'HrNow', 'TdNow', 'barometerNow', 'rainRateNow', 'radiationNow', 'UvNow', 'Tn10min', 'Tx10min', 'rainCumul10min', 'rainRateMax10min', 'radiationMax10min', 'UvMax10min', 'windGustMax1h', 'windGustMaxDir1h', 'windGustMaxdt1h', 'windGustMax10min', 'windGustMaxDir10min', 'windGustMaxdt10min', 'windSpeedAvg10min', 'windDirAvg10min', 'Tn1h', 'Tx1h', 'rainCumul1h', 'rainRateMax1h', 'radiationMax1h', 'UvMax1h', 'Tn12h', 'Tx12h', 'rainCumul3h', 'rainCumul6h', 'rainCumul12h', 'rainCumul24h', 'rainCumulMonth', 'rainCumulYear');
-
-// Établissement des timestamp stop et start
-	$query_string = "SELECT `dateTime` FROM $db_table ORDER BY `dateTime` DESC LIMIT 1;";
-	$result       = $db_handle->query($query_string);
-
+// Établissement des timestamp stop et start et de l'unité
+	$query_string = "SELECT `dateTime`, `usUnits` AS `unit` FROM $db_table ORDER BY `dateTime` DESC LIMIT 1;";
+	$result       = $db_handle_pdo->query($query_string);
+	
 	if (!$result and $debug) {
 		// Erreur et debug activé
-		echo "Erreur dans la requete ".$query_string.PHP_EOL;
-		if ($db_type === "sqlite") {
-			echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-		} elseif ($db_type === "mysql") {
-			printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-		}
-		exit("Impossible de déterminer le dernier relevé en date dans la BDD WeeWX de votre station.\n");
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Impossible de déterminer la date du dernier relevé dans la BDD WeeWX de votre station.\n");
 	}
 	if ($result) {
-		if ($db_type === "sqlite") {
-			$row = $result->fetchArray(SQLITE3_ASSOC);
-		} elseif ($db_type === "mysql") {
-			$row = mysqli_fetch_assoc($result);
-		}
+		$row = $result->fetch(PDO::FETCH_ASSOC);
 
-		$tsStop = $row['dateTime'];  // stop = dernier relevé dispo en BDD en timestamp Unix
+		// stop = dernier relevé dispo en BDD en timestamp Unix
+		$tsStop = $row['dateTime'];
 		
 		// Arrondi du datetime Stop
 		$datetimeStop = new DateTime();
@@ -299,140 +263,277 @@
 
 		$tsStart = $tsStop-($periodeRecup);       // start = dernier relevé - le temps demandé dans le fichier de config (en secondes)
 		$dtStart = date('d-m-Y H:i:s',$tsStart);
-	}
 
-// Génération de la liste (dans un tableau) des dates a générer
-	$dtGenerations = getDatesFromRange($dtStart, $dtStop);
-
-// Affichage du tableau contenant les dates à générer
-	if ($debug) {
-		echo "Liste des dates à générer :".PHP_EOL;
-		echo '<pre>';
-		print_r($dtGenerations);
-		echo '</pre>';
-	}
-	if ($debug) {
-		echo PHP_EOL.PHP_EOL."Affichage du résultat du traitement pour chaque date :".PHP_EOL.PHP_EOL.PHP_EOL;
-	}
-
-	// Boucle sur chaque dates à générer
-	foreach ($dtGenerations as $dtGeneration) {
-		// CONVERT date en timestamp | Stop = fin && Start = début
-		$dtStopActu  = $dtGeneration;
-		$tsStopActu  = strtotime($dtStopActu);
-		$tsStartActu = $tsStopActu-($intervalRecup*60);
-		$dtStartActu = date('Y-m-d H:i:s',$tsStartActu);
-
-		$tsStart10m = $tsStopActu-(10*60);
-		$tsStart1h = $tsStopActu-(60*60);
-		$tsStart3h = $tsStopActu-(3*60*60);
-		$tsStart6h = $tsStopActu-(6*60*60);
-		$tsStart12h = $tsStopActu-(12*60*60);
-		$tsStart24h = $tsStopActu-(24*60*60);
+		// UNITS
+		$unit = $row['unit'];
 
 		if ($debug) {
-			echo "Traitement du ".$dtStopActu.PHP_EOL;
+			echo "dtStart : ".date('Y-m-d H:i:s',$tsStart)."\n";
+			echo "dtStop : ".date('Y-m-d H:i:s',$tsStop)."\n";
 		}
+	}
 
-		###############################################################
-		##### PARAMS TEMPS REEL
-		###############################################################
+// csvTab insertion du header
+	$csvTab = [];
+	$csvTab ['header'] ['dtUTC'] = null;
+	$csvTab ['header'] ['TempNow'] = null;
+	$csvTab ['header'] ['HrNow'] = null;
+	$csvTab ['header'] ['TdNow'] = null;
+	$csvTab ['header'] ['barometerNow'] = null;
+	$csvTab ['header'] ['rainRateNow'] = null;
+	$csvTab ['header'] ['radiationNow'] = null;
+	$csvTab ['header'] ['UvNow'] = null;
+	$csvTab ['header'] ['Tn10m'] = null;
+	$csvTab ['header'] ['Tx10m'] = null;
+	$csvTab ['header'] ['rainCumul10m'] = null;
+	$csvTab ['header'] ['rainCumulYear'] = null;
+	$csvTab ['header'] ['rainRateMax10m'] = null;
+	$csvTab ['header'] ['radiationMax10m'] = null;
+	$csvTab ['header'] ['UvMax10m'] = null;
+	$csvTab ['header'] ['Tn1h'] = null;
+	$csvTab ['header'] ['Tx1h'] = null;
+	$csvTab ['header'] ['rainCumul1h'] = null;
+	$csvTab ['header'] ['rainRateMax1h'] = null;
+	$csvTab ['header'] ['radiationMax1h'] = null;
+	$csvTab ['header'] ['UvMax1h'] = null;
+	$csvTab ['header'] ['windGustMax1h'] = null;
+	$csvTab ['header'] ['windGustMaxDir1h'] = null;
+	$csvTab ['header'] ['windGustMaxdt1h'] = null;
+	$csvTab ['header'] ['windGustMax10m'] = null;
+	$csvTab ['header'] ['windGustMaxDir10m'] = null;
+	$csvTab ['header'] ['windGustMaxdt10m'] = null;
+	$csvTab ['header'] ['windSpeedAvg10m'] = null;
+	$csvTab ['header'] ['windDirAvg10m'] = null;
+	$csvTab ['header'] ['Tn12h'] = null;
+	$csvTab ['header'] ['TnDt12h'] = null;
+	$csvTab ['header'] ['Tx12h'] = null;
+	$csvTab ['header'] ['TxDt12h'] = null;
+	$csvTab ['header'] ['rainCumul12h'] = null;
 
-		$query_string = "SELECT * FROM $db_table WHERE `dateTime` = '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
+// Génération de la liste des DATES à générer
+	$query_string = "SELECT CEIL(`dateTime`/600.0)*600 AS `ts` FROM $db_table WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop GROUP BY `ts` ORDER BY `ts` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
 
-		if (!$result && $debug) {
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Impossible de déterminer la date du dernier relevé dans la BDD WeeWX de votre station.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$row['ts'] = (string)round($row['ts']);
+			// Insertion dans le tableau des date time UTC en tant que key
+			$csvTab [$row['ts']] = array();
+			$csvTab [$row['ts']] ['dtUTC'] = date('Y-m-d H:i:s',$row['ts']);
+		}
+	}
+
+// CALCUL SUM RAIN YEAR
+	// On calcul dés le départ le cumul annuel AVANT le tsStart
+	// On l'incrémentera ensuite toutes les 10 minutes du cumul sur 10 minutes
+	// Mais il faut vérifier que le tsStart et le tsStop ne chevauche pas plusieurs années
+	$firstYear = null;
+	$lastYear = date('Y',$tsStart);
+	if (date('Y',$tsStart) != date('Y',$tsStop)) {
+		$firstYear = date('Y',$tsStart); // Variable texte de l'année
+		if ($debug) {
+			echo "Chevauchement d'année, méthode du cumul annuel multiple\n";
+			echo "firstYear : ".$firstYear."\n";
+		}
+		$dtFirstYear = DateTime::createFromFormat('Y', $firstYear); // Objet dt de l'année
+		${"tsStartYear".$firstYear} = strtotime(date('Y-01-01 00:00:00', $dtFirstYear->format('U')));
+		// Requete
+		$query_string = "SELECT SUM(`rain`) AS `rainCumulYear`
+							FROM $db_table
+							WHERE `dateTime` > ${'tsStartYear'.$firstYear}
+							AND `dateTime`< $tsStart;";
+		$result       = $db_handle_pdo->query($query_string);
+
+		if (!$result and $debug) {
 			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
+			echo "Erreur dans la requete ".$query_string."\n";
+			echo "\nPDO::errorInfo():\n";
+			print_r($db_handle_pdo->errorInfo());
+			exit("Erreur RR YEAR SIMPLE.\n");
 		}
 		if ($result) {
-			$tempNow      = null;
+			$rainCumulYear = null;
+			${"rainCumulYear".$firstYear} = null;
+			while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+				if (!is_null ($row['rainCumulYear'])) {
+					if ($unit == '1') {
+						${"rainCumulYear".$firstYear} = round($row['rainCumulYear']*25.4,1);
+					}elseif ($unit == '16') {
+						${"rainCumulYear".$firstYear} = round($row['rainCumulYear']*10,1);
+					}elseif ($unit == '17') {
+						${"rainCumulYear".$firstYear} = round($row['rainCumulYear'],1);
+					}
+				}
+			}
+			if ($debug) {
+				echo "Cumul $firstYear avant tsStart : ".${"rainCumulYear".$firstYear}." mm\n";
+			}
+		}
+	} else {
+		if ($debug) {
+			echo "Pas de chevauchement d'année, méthode du cumul annuel simple\n";
+		}
+		$tsStartYear = strtotime(date('Y-01-01 00:00:00', $tsStart));
+		// Requete
+		$query_string = "SELECT SUM(`rain`) AS `rainCumulYear`
+							FROM $db_table
+							WHERE `dateTime` > $tsStartYear
+							AND `dateTime`< $tsStart;";
+		$result       = $db_handle_pdo->query($query_string);
+
+		if (!$result and $debug) {
+			// Erreur et debug activé
+			echo "Erreur dans la requete ".$query_string."\n";
+			echo "\nPDO::errorInfo():\n";
+			print_r($db_handle_pdo->errorInfo());
+			exit("Erreur RR YEAR SIMPLE.\n");
+		}
+		if ($result) {
+			$rainCumulYear = null;
+			while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+				if (!is_null ($row['rainCumulYear'])) {
+					if ($unit == '1') {
+						$rainCumulYear = round($row['rainCumulYear']*25.4,1);
+					}elseif ($unit == '16') {
+						$rainCumulYear = round($row['rainCumulYear']*10,1);
+					}elseif ($unit == '17') {
+						$rainCumulYear = round($row['rainCumulYear'],1);
+					}
+				}
+			}
+			if ($debug) {
+				echo "Cumul annuel avant tsStart : ".$rainCumulYear." mm\n";
+			}
+		}
+	}
+
+// PARAMS TEMPS REEL
+	$query_string = "SELECT `dateTime` AS `ts`,
+					`outTemp` AS `TempNow`,
+					`outHumidity` AS `HrNow`,
+					`dewpoint` AS `TdNow`,
+					`barometer` AS `barometerNow`,
+					`rainRate` AS `rainRateNow`,
+					`radiation` AS `radiationNow`,
+					`UV` AS `UvNow`
+				FROM `archive`
+				WHERE `dateTime` % 600 = 0
+				AND `dateTime` >= $tsStart
+				AND `dateTime` <= $tsStop;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$TempNow      = null;
 			$HrNow        = null;
 			$TdNow        = null;
 			$barometerNow = null;
 			$rainRateNow  = null;
 			$radiationNow = null;
 			$UvNow        = null;
+			$row['ts'] = (string)round($row['ts']);
 
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-
-			// UNITS
-			$unit = $row['usUnits'];
-
-			// PARAMS TEMPS REEL
-			if (!is_null ($row['outTemp'])) {
+			// Traitement des données
+			if (!is_null ($row['TempNow'])) {
 				if ($unit == '1') {
-					$tempNow = round(($row['outTemp']-32)/1.8,1);
+					$TempNow = round(($row['TempNow']-32)/1.8,1);
 				}elseif ($unit == '16' || $unit == '17') {
-					$tempNow = round($row['outTemp'],1);
+					$TempNow = round($row['TempNow'],1);
 				}
 			}
-			if (!is_null ($row['outHumidity'])) {
-				$HrNow  = round($row['outHumidity'],1);
+			if (!is_null ($row['HrNow'])) {
+				$HrNow  = round($row['HrNow'],1);
 			}
-			if (!is_null ($row['dewpoint'])) {
+			if (!is_null ($row['TdNow'])) {
 				if ($unit == '1') {
-					$TdNow = round(($row['dewpoint']-32)/1.8,1);
+					$TdNow = round(($row['TdNow']-32)/1.8,1);
 				}elseif ($unit == '16' || $unit == '17') {
-					$TdNow = round($row['dewpoint'],1);
+					$TdNow = round($row['TdNow'],1);
 				}
 			}
-			if (!is_null ($row['barometer'])) {
+			if (!is_null ($row['barometerNow'])) {
 				if ($unit == '1') {
-					$barometerNow = round($row['barometer']*33.8639,1);
+					$barometerNow = round($row['barometerNow']*33.8639,1);
 				}elseif ($unit == '16' || $unit == '17') {
-					$barometerNow = round($row['barometer'],1);
+					$barometerNow = round($row['barometerNow'],1);
 				}
 			}
-			if (!is_null ($row['rainRate'])) {
+			if (!is_null ($row['rainRateNow'])) {
 				if ($unit == '1') {
-					$rainRateNow = round($row['rainRate']*25.4,1);
+					$rainRateNow = round($row['rainRateNow']*25.4,1);
 				}elseif ($unit=='16') {
-					$rainRateNow = round($row['rainRate']*10,1);
+					$rainRateNow = round($row['rainRateNow']*10,1);
 				}elseif ($unit=='17') {
-					$rainRateNow = round($row['rainRate'],1);
+					$rainRateNow = round($row['rainRateNow'],1);
 				}
 			}
-			if (!is_null ($row['radiation'])) {
-				$radiationNow  = round($row['radiation'],0);
+			if (!is_null ($row['radiationNow'])) {
+				$radiationNow  = round($row['radiationNow'],0);
 			}
-			if (!is_null ($row['UV'])) {
-				$UvNow  = round($row['UV'],1);
+			if (!is_null ($row['UvNow'])) {
+				$UvNow  = round($row['UvNow'],1);
 			}
-		}
 
-		###############################################################
-		##### PARAMS 10 minutes
-		###############################################################
-
-		// Calcul Tn10m
-		$query_string = "SELECT MIN(`outTemp`) AS `Tn10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
+			// Insertion dans le tableau des params temps réel
+			$csvTab [$row['ts']] ['TempNow'] = $TempNow;
+			$csvTab [$row['ts']] ['HrNow'] = $HrNow;
+			$csvTab [$row['ts']] ['TdNow'] = $TdNow;
+			$csvTab [$row['ts']] ['barometerNow'] = $barometerNow;
+			$csvTab [$row['ts']] ['rainRateNow'] = $rainRateNow;
+			$csvTab [$row['ts']] ['radiationNow'] = $radiationNow;
+			$csvTab [$row['ts']] ['UvNow'] = $UvNow;
 		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
+	}
+
+// PARAMS SUR 10 minutes
+	$query_string = "SELECT CEIL(`dateTime`/600.0)*600 AS `ts`,
+									MIN(`outTemp`) AS `Tn10m`,
+									MAX(`outTemp`) AS `Tx10m`,
+									SUM(`rain`) AS `rainCumul10m`,
+									MAX(`rainRate`) AS `rainRateMax10m`,
+									MAX(`radiation`) AS `radiationMax10m`,
+									MAX(`UV`) AS `UvMax10m`
+					FROM $db_table WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop GROUP BY `ts` ORDER BY `ts` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
 			$Tn10m  = null;
+			$Tx10m  = null;
+			$rainCumul10m = null;
+			$rainRateMax10m = null;
+			$radiationMax10m = null;
+			$UvMax10m = null;
+			$row['ts'] = (string)round($row['ts']);
+			if ($lastYear != date('Y',$row['ts'])) {
+				// On reinit le cumul year si on vient de changer d'année
+				$rainCumulYear = 0;
+				$lastYear = date('Y',$row['ts']);
+				if ($debug) {
+					echo "Reinit du rainCumulYear car changement d'année | ".date('Y-m-d H:i:s', $row['ts'])."\n";
+				}
+			}
 			if (!is_null ($row['Tn10m'])) {
 				if ($unit == '1') {
 					$Tn10m = round(($row['Tn10m']-32)/1.8,1);
@@ -440,27 +541,6 @@
 					$Tn10m = round($row['Tn10m'],1);
 				}
 			}
-		}
-
-		// Calcul Tx10m
-		$query_string = "SELECT MAX(`outTemp`) AS `Tx10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$Tx10m  = null;
 			if (!is_null ($row['Tx10m'])) {
 				if ($unit == '1') {
 					$Tx10m = round(($row['Tx10m']-32)/1.8,1);
@@ -468,57 +548,33 @@
 					$Tx10m = round($row['Tx10m'],1);
 				}
 			}
-		}
-
-		// Calcul RAIN cumul 10m
-		$query_string = "SELECT SUM(`rain`) AS `rainCumul10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumul10m = null;
 			if (!is_null ($row['rainCumul10m'])) {
 				if ($unit == '1') {
 					$rainCumul10m = round($row['rainCumul10m']*25.4,1);
+					if (date('Y',$row['ts']) == $firstYear) {
+						${"rainCumulYear".$firstYear} = ${"rainCumulYear".$firstYear} + $rainCumul10m;
+						$rainCumulYear = ${"rainCumulYear".$firstYear};
+					} else {
+						$rainCumulYear = $rainCumulYear + $rainCumul10m;
+					}
 				}elseif ($unit == '16') {
 					$rainCumul10m = round($row['rainCumul10m']*10,1);
+					if (date('Y',$row['ts']) == $firstYear) {
+						${"rainCumulYear".$firstYear} = ${"rainCumulYear".$firstYear} + $rainCumul10m;
+						$rainCumulYear = ${"rainCumulYear".$firstYear};
+					} else {
+						$rainCumulYear = $rainCumulYear + $rainCumul10m;
+					}
 				}elseif ($unit == '17') {
 					$rainCumul10m = round($row['rainCumul10m'],1);
+					if (date('Y',$row['ts']) == $firstYear) {
+						${"rainCumulYear".$firstYear} = ${"rainCumulYear".$firstYear} + $rainCumul10m;
+						$rainCumulYear = ${"rainCumulYear".$firstYear};
+					} else {
+						$rainCumulYear = $rainCumulYear + $rainCumul10m;
+					}
 				}
 			}
-		}
-
-		// Récup rainRate max 10m
-		$query_string = "SELECT MAX(`rainRate`) AS `rainRateMax10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainRateMax10m = null;
 			if (!is_null ($row['rainRateMax10m'])) {
 				if ($unit == '1') {
 					$rainRateMax10m = round($row['rainRateMax10m']*25.4,1);
@@ -528,82 +584,131 @@
 					$rainRateMax10m = round($row['rainRateMax10m'],1);
 				}
 			}
-		}
-
-		// Récup rayonnement max 10m
-		$query_string = "SELECT MAX(`radiation`) AS `radiationMax10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$radiationMax10m = null;
 			if (!is_null ($row['radiationMax10m'])) {
 				$radiationMax10m = round($row['radiationMax10m'],0);
 			}
-		}
-
-		// Récup UV max 10 min
-		$query_string = "SELECT MAX(`UV`) AS `UvMax10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$UvMax10m = null;
 			if (!is_null ($row['UvMax10m'])) {
 				$UvMax10m = round($row['UvMax10m'],1);
 			}
-		}
 
-		###############################################################
-		##### PARAMS VENT
-		###############################################################
-
-		// Récup rafales max et sa direction sur une heure
-		$tsStart1hour = $tsStopActu-(60*60);
-		$query_string = "SELECT `dateTime`, `windGust`, `windGustDir` FROM $db_table WHERE `dateTime` > '$tsStart1hour' AND `dateTime` <= '$tsStopActu' AND windGust = (SELECT MAX(`windGust`) FROM $db_table WHERE `dateTime` > '$tsStart1hour' AND `dateTime` <= '$tsStopActu');";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
+			// Insertion dans le tableau des données
+			$csvTab [$row['ts']] ['Tn10m'] = $Tn10m;
+			$csvTab [$row['ts']] ['Tx10m'] = $Tx10m;
+			$csvTab [$row['ts']] ['rainCumul10m'] = $rainCumul10m;
+			$csvTab [$row['ts']] ['rainCumulYear'] = $rainCumulYear;
+			$csvTab [$row['ts']] ['rainRateMax10m'] = $rainRateMax10m;
+			$csvTab [$row['ts']] ['radiationMax10m'] = $radiationMax10m;
+			$csvTab [$row['ts']] ['UvMax10m'] = $UvMax10m;
 		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
+	}
+
+
+// PARAMS SUR 1 heure
+	$query_string = "SELECT CEIL(`dateTime`/3600.0)*3600 AS `ts`,
+									MIN(`outTemp`) AS `Tn1h`,
+									MAX(`outTemp`) AS `Tx1h`,
+									SUM(`rain`) AS `rainCumul1h`,
+									MAX(`rainRate`) AS `rainRateMax1h`,
+									MAX(`radiation`) AS `radiationMax1h`,
+									MAX(`UV`) AS `UvMax1h`-- ,
+									-- MAX(`windGust`) AS `windGustMax1h`
+					FROM $db_table WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop GROUP BY `ts` ORDER BY `ts` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$Tn1h  = null;
+			$Tx1h  = null;
+			$rainCumul1h = null;
+			$rainRateMax1h = null;
+			$radiationMax1h = null;
+			$UvMax1h = null;
+			$row['ts'] = (string)round($row['ts']);
+			if (!is_null ($row['Tn1h'])) {
+				if ($unit == '1') {
+					$Tn1h = round(($row['Tn1h']-32)/1.8,1);
+				}elseif ($unit == '16' || $unit == '17') {
+					$Tn1h = round($row['Tn1h'],1);
+				}
 			}
+			if (!is_null ($row['Tx1h'])) {
+				if ($unit == '1') {
+					$Tx1h = round(($row['Tx1h']-32)/1.8,1);
+				}elseif ($unit == '16' || $unit == '17') {
+					$Tx1h = round($row['Tx1h'],1);
+				}
+			}
+			if (!is_null ($row['rainCumul1h'])) {
+				if ($unit == '1') {
+					$rainCumul1h = round($row['rainCumul1h']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul1h = round($row['rainCumul1h']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul1h = round($row['rainCumul1h'],1);
+				}
+			}
+			if (!is_null ($row['rainRateMax1h'])) {
+				if ($unit == '1') {
+					$rainRateMax1h = round($row['rainRateMax1h']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainRateMax1h = round($row['rainRateMax1h']*10,1);
+				}elseif ($unit == '17') {
+					$rainRateMax1h = round($row['rainRateMax1h'],1);
+				}
+			}
+			if (!is_null ($row['radiationMax1h'])) {
+				$radiationMax1h = round($row['radiationMax1h'],0);
+			}
+			if (!is_null ($row['UvMax1h'])) {
+				$UvMax1h = round($row['UvMax1h'],1);
+			}
+
+			// Insertion dans le tableau des données
+			$csvTab [$row['ts']] ['Tn1h'] = $Tn1h;
+			$csvTab [$row['ts']] ['Tx1h'] = $Tx1h;
+			$csvTab [$row['ts']] ['rainCumul1h'] = $rainCumul1h;
+			$csvTab [$row['ts']] ['rainRateMax1h'] = $rainRateMax1h;
+			$csvTab [$row['ts']] ['radiationMax1h'] = $radiationMax1h;
+			$csvTab [$row['ts']] ['UvMax1h'] = $UvMax1h;
+		}
+	}
+
+
+// PARAMS VENT RAFALES 1 heure
+	// On sort un tableau contenant le dt "CEIL", et ensuite le dt de la rafale max, sa direction et sa vitesse
+	$query_string = "SELECT CEIL(`dateTime`/3600.0)*3600 AS `ts`, a.`dateTime`, a.`windGust`, a.`windGustDir`
+					FROM $db_table a
+					INNER JOIN (
+						SELECT CEIL(`dateTime`/3600.0)*3600 AS `dtUTC2`, MAX(`windGust`) AS `windGustMax`
+						FROM $db_table
+						WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop
+						GROUP BY `dtUTC2`
+					) b
+					ON CEIL(a.`dateTime`/3600.0)*3600 = b.`dtUTC2` AND b.`windGustMax` = a.`windGust`
+					WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop
+					ORDER BY `a`.`dateTime` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
 			$windGustMax1h    = null;
 			$windGustMaxDir1h = null;
 			$windGustMaxdt1h  = null;
+			$row['ts'] = (string)round($row['ts']);
 			if (!is_null ($row['windGust'])) {
 				if ($unit=='1') {
 					$windGustMax1h = round($row['windGust']*1.60934,1);
@@ -615,29 +720,44 @@
 				if (!is_null ($row['windGustDir'])) { $windGustMaxDir1h = round($row['windGustDir'],1); }
 				$windGustMaxdt1h = date('Y-m-d H:i:s',$row['dateTime']);
 			}
+			// Insertion dans le tableau des données
+			// Sauf que notre résultat comprend des doublons (plusieurs rafales max identique dans la même heure), donc on n'insert que si la valeur n'a pas déjà été enregistrée pour cette même KEY (ts) == On garde donc seulement la première rafale max
+			if (!isset($csvTab [$row['ts']] ['windGustMax1h'])) {
+				$csvTab [$row['ts']] ['windGustMax1h'] = $windGustMax1h;
+				$csvTab [$row['ts']] ['windGustMaxDir1h'] = $windGustMaxDir1h;
+				$csvTab [$row['ts']] ['windGustMaxdt1h'] = $windGustMaxdt1h;
+			}
 		}
+	}
 
-		// Récup rafales max et sa direction sur 10m
-		$query_string = "SELECT `dateTime`, `windGust`, `windGustDir` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu' AND windGust = (SELECT MAX(`windGust`) FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu');";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
+// PARAMS VENT RAFALES 10 min
+	// On sort un tableau contenant le dt "CEIL", et ensuite le dt de la rafale max, sa direction et sa vitesse
+	$query_string = "SELECT CEIL(`dateTime`/600.0)*600 AS `ts`, a.`dateTime`, a.`windGust`, a.`windGustDir`
+					FROM $db_table a
+					INNER JOIN (
+						SELECT CEIL(`dateTime`/600.0)*600 AS `dtUTC2`, MAX(`windGust`) AS `windGustMax`
+						FROM $db_table
+						WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop
+						GROUP BY `dtUTC2`
+					) b
+					ON CEIL(a.`dateTime`/600.0)*600 = b.`dtUTC2` AND b.`windGustMax` = a.`windGust`
+					WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop
+					ORDER BY `a`.`dateTime` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
 			$windGustMax10m    = null;
 			$windGustMaxDir10m = null;
 			$windGustMaxdt10m  = null;
+			$row['ts'] = (string)round($row['ts']);
 			if (!is_null ($row['windGust'])) {
 				if ($unit=='1') {
 					$windGustMax10m = round($row['windGust']*1.60934,1);
@@ -649,27 +769,33 @@
 				if (!is_null ($row['windGustDir'])) { $windGustMaxDir10m = round($row['windGustDir'],1); }
 				$windGustMaxdt10m = date('Y-m-d H:i:s',$row['dateTime']);
 			}
+			// Insertion dans le tableau des données
+			// Sauf que notre résultat comprend des doublons (plusieurs rafales max identique dans la tranche de 10 minutes), donc on n'insert que si la valeur n'a pas déjà été enregistrée pour cette même KEY (ts) == On garde donc seulement la première rafale max
+			if (!isset($csvTab [$row['ts']] ['windGustMax10m'])) {
+				$csvTab [$row['ts']] ['windGustMax10m'] = $windGustMax10m;
+				$csvTab [$row['ts']] ['windGustMaxDir10m'] = $windGustMaxDir10m;
+				$csvTab [$row['ts']] ['windGustMaxdt10m'] = $windGustMaxdt10m;
+			}
 		}
+	}
 
-		// Calcul vitesse moyenne du vent moyen sur 10m
-		$query_string = "SELECT AVG(`windSpeed`) AS `windSpeedAvg10m` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
+// PARAMS VENT MOYEN VITESSE sur 10 minutes
+	$query_string = "SELECT CEIL(`dateTime`/600.0)*600 AS `ts`,
+									AVG(`windSpeed`) AS `windSpeedAvg10m`
+					FROM $db_table WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop GROUP BY `ts` ORDER BY `ts` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
 			$windSpeedAvg10m = null;
+			$row['ts'] = (string)round($row['ts']);
 			if (!is_null ($row['windSpeedAvg10m'])) {
 				if ($unit=='1') {
 					$windSpeedAvg10m = round($row['windSpeedAvg10m']*1.60934,1);
@@ -679,514 +805,230 @@
 					$windSpeedAvg10m = round($row['windSpeedAvg10m']*3.6,1);
 				}
 			}
+			$csvTab [$row['ts']] ['windSpeedAvg10m'] = $windSpeedAvg10m;
 		}
+	}
 
-		// Calcul de la direction moyenne du vent moyen sur 10m
-		// Requete + mise en tableau de la réponse
-		$windDirArray        = null;
-		$windDirAvg10minTemp = null;
-		$query_string        = "SELECT `windDir` AS `windDir` FROM $db_table WHERE `dateTime` > '$tsStart10m' AND `dateTime` <= '$tsStopActu';";
-		$result              = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			// Construct tableau
-			if ($db_type === "sqlite") {
-				while ($row=$result->fetchArray(SQLITE3_ASSOC)) {
-					if (!is_null ($row['windDir'])) {
-						$windDirArray[] = $row['windDir'];
-					}
-				}
-			} elseif ($db_type === "mysql") {
-				while ($row=mysqli_fetch_assoc($result)) {
-					if (!is_null ($row['windDir'])) {
-						$windDirArray[] = $row['windDir'];
-					}
-				}
+// PARAMS VENT MOYEN direction sur 10 minutes
+	$query_string = "SELECT CEIL(`dateTime`/600.0)*600 AS `ts`,
+									GROUP_CONCAT(`windDir`) AS `windDirConcat`
+					FROM $db_table WHERE `dateTime` >= $tsStart AND `dateTime` <= $tsStop GROUP BY `ts` ORDER BY `ts` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur dans la récupération des params sur 10 minutes de la station.\n");
+	}
+	if ($result) {
+		// Construction du tableau
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$windDirArray = null;
+			$windDirAvg10minTemp = null;
+			$row['ts'] = (string)round($row['ts']);
+			if (!is_null($row['windDirConcat'])) {
+				$windDirArray[] = explode(',', $row['windDirConcat']);
 			}
 			// Calcul de la moyenne avec la fonction `mean_of_angles` et le tableau
-			if (!is_null ($windDirArray)) { $windDirAvg10minTemp = mean_of_angles($windDirArray); }
+			if (!is_null ($windDirArray)) {
+				$windDirAvg10minTemp = mean_of_angles($windDirArray['0']);
+			}
 			// Vérif not null
 			$windDirAvg10m = null;
 			if (!is_null ($windDirAvg10minTemp)) {
 				$windDirAvg10m = round($windDirAvg10minTemp,1);
 			}
+			// Insertion dans le tableau CSV
+			$csvTab [$row['ts']] ['windDirAvg10m'] = $windDirAvg10m;
 		}
-
-		###############################################################
-		##### PARAMS 1 heure
-		###############################################################
-
-		// Calcul Tn1h
-		$query_string = "SELECT MIN(`outTemp`) AS `Tn1h` FROM $db_table WHERE `dateTime` > '$tsStart1h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$Tn1h  = null;
-			if (!is_null ($row['Tn1h'])) {
-				if ($unit == '1') {
-					$Tn1h = round(($row['Tn1h']-32)/1.8,1);
-				}elseif ($unit == '16' || $unit == '17') {
-					$Tn1h = round($row['Tn1h'],1);
-				}
-			}
-			
-		}
-
-		// Calcul Tx1h
-		$query_string = "SELECT MAX(`outTemp`) AS `Tx1h` FROM $db_table WHERE `dateTime` > '$tsStart1h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$Tx1h  = null;
-			if (!is_null ($row['Tx1h'])) {
-				if ($unit == '1') {
-					$Tx1h = round(($row['Tx1h']-32)/1.8,1);
-				}elseif ($unit == '16' || $unit == '17') {
-					$Tx1h = round($row['Tx1h'],1);
-				}
-			}
-		}
-
-		// Calcul RAIN cumul 1h
-		$query_string = "SELECT SUM(`rain`) AS `rainCumul1h` FROM $db_table WHERE `dateTime` > '$tsStart1h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumul1h = null;
-			if (!is_null ($row['rainCumul1h'])) {
-				if ($unit == '1') {
-					$rainCumul1h = round($row['rainCumul1h']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumul1h = round($row['rainCumul1h']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumul1h = round($row['rainCumul1h'],1);
-				}
-			}
-		}
-
-		// Récup rainRate max 1h
-		$query_string = "SELECT MAX(`rainRate`) AS `rainRateMax1h` FROM $db_table WHERE `dateTime` > '$tsStart1h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainRateMax1h = null;
-			if (!is_null ($row['rainRateMax1h'])) {
-				if ($unit == '1') {
-					$rainRateMax1h = round($row['rainRateMax1h']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainRateMax1h = round($row['rainRateMax1h']*10,1);
-				}elseif ($unit == '17') {
-					$rainRateMax1h = round($row['rainRateMax1h'],1);
-				}
-			}
-		}
-
-		// Récup rayonnement max 1h
-		$query_string = "SELECT MAX(`radiation`) AS `radiationMax1h` FROM $db_table WHERE `dateTime` > '$tsStart1h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$radiationMax1h = null;
-			if (!is_null ($row['radiationMax1h'])) {
-				$radiationMax1h = round($row['radiationMax1h'],0);
-			}
-		}
-
-		// Récup UV max 1h
-		$query_string = "SELECT MAX(`UV`) AS `UvMax1h` FROM $db_table WHERE `dateTime` > '$tsStart1h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$UvMax1h = null;
-			if (!is_null ($row['UvMax1h'])) {
-				$UvMax1h = round($row['UvMax1h'],1);
-			}
-		}
-
-		###############################################################
-		##### PARAMS autres temps
-		###############################################################
-
-		// Calcul Tn12h
-		$query_string = "SELECT MIN(`outTemp`) AS `Tn12h` FROM $db_table WHERE `dateTime` > '$tsStart12h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$Tn12h  = null;
-			if (!is_null ($row['Tn12h'])) {
-				if ($unit == '1') {
-					$Tn12h = round(($row['Tn12h']-32)/1.8,1);
-				}elseif ($unit == '16' || $unit == '17') {
-					$Tn12h = round($row['Tn12h'],1);
-				}
-			}
-			
-		}
-
-		// Calcul Tx12h
-		$query_string = "SELECT MAX(`outTemp`) AS `Tx12h` FROM $db_table WHERE `dateTime` > '$tsStart12h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$Tx12h  = null;
-			if (!is_null ($row['Tx12h'])) {
-				if ($unit == '1') {
-					$Tx12h = round(($row['Tx12h']-32)/1.8,1);
-				}elseif ($unit == '16' || $unit == '17') {
-					$Tx12h = round($row['Tx12h'],1);
-				}
-			}
-		}
-
-		// Cumul pluie sur 3 heures glissante
-		$query_string = "SELECT SUM(`rain`) AS `rainCumul3h` FROM $db_table WHERE `dateTime` > '$tsStart3h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumul3h = null;
-			if (!is_null ($row['rainCumul3h'])) {
-				if ($unit == '1') {
-					$rainCumul3h = round($row['rainCumul3h']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumul3h = round($row['rainCumul3h']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumul3h = round($row['rainCumul3h'],1);
-				}
-			}
-		}
-
-		// Cumul pluie sur 6 heures glissante
-		$query_string = "SELECT SUM(`rain`) AS `rainCumul6h` FROM $db_table WHERE `dateTime` > '$tsStart6h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumul6h = null;
-			if (!is_null ($row['rainCumul6h'])) {
-				if ($unit == '1') {
-					$rainCumul6h = round($row['rainCumul6h']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumul6h = round($row['rainCumul6h']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumul6h = round($row['rainCumul6h'],1);
-				}
-			}
-		}
-
-		// Cumul pluie sur 12 heures glissante
-		$query_string = "SELECT SUM(`rain`) AS `rainCumul12h` FROM $db_table WHERE `dateTime` > '$tsStart12h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumul12h = null;
-			if (!is_null ($row['rainCumul12h'])) {
-				if ($unit == '1') {
-					$rainCumul12h = round($row['rainCumul12h']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumul12h = round($row['rainCumul12h']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumul12h = round($row['rainCumul12h'],1);
-				}
-			}
-		}
-
-		// Cumul pluie sur 24 heures glissante peu importe l'intervalle de récup
-		$query_string = "SELECT SUM(`rain`) AS `rainCumul24h` FROM $db_table WHERE `dateTime` > '$tsStart24h' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumul24h = null;
-			if (!is_null ($row['rainCumul24h'])) {
-				if ($unit == '1') {
-					$rainCumul24h = round($row['rainCumul24h']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumul24h = round($row['rainCumul24h']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumul24h = round($row['rainCumul24h'],1);
-				}
-			}
-		}
-
-		// Calcul RAIN cumul month
-		// Premier jour de ce mois
-		$dtStartMonth = date('Y-m-01 00:00:00', strtotime($dtStartActu)); // $dtStartActu = le ts de début de l'interval en cours
-		// $tsStartMonth  = strtotime($dtStartMonth)-1; // -1 seconde pour inclure dans la requete ci dessous l'enregistrement de l'heure pile
-		$tsStartMonth  = strtotime($dtStartMonth);
-
-		$query_string = "SELECT SUM(`rain`) AS `rainCumulMonth` FROM $db_table WHERE `dateTime` > '$tsStartMonth' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($debug) {
-				echo '1er du mois : '.$dtStartMonth.PHP_EOL;
-			}
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumulMonth = null;
-			if (!is_null ($row['rainCumulMonth'])) {
-				if ($unit == '1') {
-					$rainCumulMonth = round($row['rainCumulMonth']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumulMonth = round($row['rainCumulMonth']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumulMonth = round($row['rainCumulMonth'],1);
-				}
-			}
-		}
-
-		// Calcul RAIN cumul year
-		// Premier jour de cette année
-		$dtStartYear = date('Y-01-01 00:00:00', strtotime($dtStartActu));
-		// $tsStartYear  = strtotime($dtStartYear)-1; // -1 seconde pour inclure dans la requete ci dessous l'enregistrement de l'heure pile
-		$tsStartYear  = strtotime($dtStartYear);
-
-		$query_string = "SELECT SUM(`rain`) AS `rainCumulYear` FROM $db_table WHERE `dateTime` > '$tsStartYear' AND `dateTime` <= '$tsStopActu';";
-		$result       = $db_handle->query($query_string);
-		if (!$result && $debug) {
-			// Erreur et debug activé
-			echo "Erreur dans la requete ".$query_string.PHP_EOL;
-			if ($db_type === "sqlite") {
-				echo $db_handle->lastErrorMsg().PHP_EOL.PHP_EOL;
-			} elseif ($db_type === "mysql") {
-				printf("Message d'erreur : %s\n", $db_handle->error).PHP_EOL.PHP_EOL;
-			}
-		}
-		if ($result) {
-			if ($debug) {
-				echo '1er de l\'année : '.$dtStartYear.PHP_EOL;
-			}
-			if ($db_type === "sqlite") {
-				$row = $result->fetchArray(SQLITE3_ASSOC);
-			} elseif ($db_type === "mysql") {
-				$row = mysqli_fetch_assoc($result);
-			}
-			$rainCumulYear = null;
-			if (!is_null ($row['rainCumulYear'])) {
-				if ($unit == '1') {
-					$rainCumulYear = round($row['rainCumulYear']*25.4,1);
-				}elseif ($unit == '16') {
-					$rainCumulYear = round($row['rainCumulYear']*10,1);
-				}elseif ($unit == '17') {
-					$rainCumulYear = round($row['rainCumulYear'],1);
-				}
-			}
-		}
-
-
-		if ($debug) {
-			echo "Unite BDD  | ".$unit." | (1 = US ; 16 = METRIC ; 17 = METRICWX)".PHP_EOL;
-			echo "Intervalle de ".$intervalRecup." minutes (de ".$dtStartActu." à ".$dtStopActu.")".PHP_EOL;
-			echo "CLIMATO		| Tn10m : ".$Tn10m."°C".PHP_EOL;
-			echo "		| Tx10m : ".$Tx10m."°C".PHP_EOL;
-			echo "		| Tn1h : ".$Tn1h."°C".PHP_EOL;
-			echo "		| Tx1h : ".$Tx1h."°C".PHP_EOL;
-			echo "		| rainCumul10m : ".$rainCumul10m." mm".PHP_EOL;
-			echo "		| rainCumul1h : ".$rainCumul1h." mm".PHP_EOL;
-			echo "		| rainCumulMonth : ".$rainCumulMonth." mm".PHP_EOL;
-			echo "		| rainCumulYear : ".$rainCumulYear." mm".PHP_EOL;
-			echo "		| rainRateMax10m : ".$rainRateMax10m." mm".PHP_EOL;
-			echo "		| rainRateMax1h : ".$rainRateMax1h." mm".PHP_EOL;
-			echo "		| radiationMax10m : ".$radiationMax10m.PHP_EOL;
-			echo "		| radiationMax1h : ".$radiationMax1h.PHP_EOL;
-			echo "		| UvMax10m : ".$UvMax10m.PHP_EOL;
-			echo "		| UvMax1h : ".$UvMax1h.PHP_EOL;
-			echo "		|".PHP_EOL;
-			echo "TEMPS REEL	| tempNow : ".$tempNow.PHP_EOL;
-			echo "		| HrNow : ".$HrNow.PHP_EOL;
-			echo "		| TdNow : ".$TdNow.PHP_EOL;
-			echo "		| barometerNow : ".$barometerNow.PHP_EOL;
-			echo "		| rainRateNow : ".$rainRateNow.PHP_EOL;
-			echo "		| radiationNow : ".$radiationNow.PHP_EOL;
-			echo "		| UvNow : ".$UvNow.PHP_EOL;
-			echo "		|".PHP_EOL;
-			echo "VENT		| Sur une heure gliss. : Raf de ".$windGustMax1h." km/h, dir ".$windGustMaxDir1h."° à ".$windGustMaxdt1h.PHP_EOL;
-			echo "VENT		| Sur 10 min.          : Raf de ".$windGustMax10m." km/h, dir ".$windGustMaxDir10m."° à ".$windGustMaxdt10m.PHP_EOL;
-			echo "VENT MOY	| Sur 10 min.          : Moy de ".$windSpeedAvg10m." km/h, dir moy ".$windDirAvg10m."°".PHP_EOL.PHP_EOL.PHP_EOL;
-		}
-
-		// Insert dans le tableau des valeurs
-		$prepareCSV[] = array ($dtStopActu, $tempNow, $HrNow, $TdNow, $barometerNow, $rainRateNow, $radiationNow, $UvNow, $Tn10m, $Tx10m, $rainCumul10m, $rainRateMax10m, $radiationMax10m, $UvMax10m, $windGustMax1h, $windGustMaxDir1h, $windGustMaxdt1h, $windGustMax10m, $windGustMaxDir10m, $windGustMaxdt10m, $windSpeedAvg10m, $windDirAvg10m, $Tn1h, $Tx1h, $rainCumul1h, $rainRateMax1h, $radiationMax1h, $UvMax1h, $Tn12h, $Tx12h, $rainCumul3h, $rainCumul6h, $rainCumul12h, $rainCumul24h, $rainCumulMonth, $rainCumulYear);
 	}
 
-	// Insert dans le fichier CSV
+// PARAMS Tn12h
+	$tsStart12h = $tsStart-(12*3600);
+	$query_string = "SELECT CEIL((`dateTime`+6*3600)/(3600.0*12.0))*3600*12-(6*3600) AS `ts`,
+						a.`dateTime`, a.`outTemp`
+					FROM $db_table a
+					INNER JOIN (
+						SELECT CEIL((`dateTime`+6*60*60)/(3600.0*12.0))*3600*12 AS `dtUTC2`, MIN(`outTemp`) AS `Tn12h`
+						FROM $db_table
+						WHERE `dateTime` >= $tsStart12h AND `dateTime` <= $tsStop
+						GROUP BY `dtUTC2`
+					) b
+					ON CEIL((a.`dateTime`+6*60*60)/(3600.0*12.0))*3600*12 = b.`dtUTC2` AND b.`Tn12h` = a.`outTemp`
+					WHERE `dateTime` >= $tsStart12h AND `dateTime` <= $tsStop
+					ORDER BY `a`.`dateTime` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$Tn12h   = null;
+			$TnDt12h = null;
+			$row['ts'] = (string)round($row['ts']);
+			if (!is_null ($row['outTemp'])) {
+				if ($unit == '1') {
+					$Tn12h = round(($row['outTemp']-32)/1.8,1);
+				}elseif ($unit == '16' || $unit == '17') {
+					$Tn12h = round($row['outTemp'],1);
+				}
+				$TnDt12h = date('Y-m-d H:i:s',$row['dateTime']);
+			}
+			// Insertion dans le tableau des données
+			// Sauf que notre résultat comprend des doublons (plusieurs rafales max identique dans la même heure), donc on n'insert que si la valeur n'a pas déjà été enregistrée pour cette même KEY (ts) == On garde donc seulement la première rafale max
+			if (!isset($csvTab [$row['ts']] ['Tn12h'])) {
+				$csvTab [$row['ts']] ['Tn12h'] = $Tn12h;
+				$csvTab [$row['ts']] ['TnDt12h'] = $TnDt12h;
+			}
+
+			// $Tn12hArray = null;
+			// if (!is_null($row['outTemp'])) {
+			// 	if (!isset($Tn12hArray [$row['ts']] ['Tn1h'])) {
+			// 		$Tn12hArray [$row['ts']] ['dtUtcTn1h'] = date('Y-m-d H:i:s',$row['dateTime']);
+			// 		$Tn12hArray [$row['ts']] ['Tn1h'] = $row['outTemp'];
+			// 	}
+			// }
+		}
+	}
+
+// PARAMS Tx12h
+	$tsStart12h = $tsStart-(12*3600);
+	$query_string = "SELECT CEIL((`dateTime`+6*3600)/(3600.0*12.0))*3600*12-(6*3600) AS `ts`,
+						a.`dateTime`, a.`outTemp`
+					FROM $db_table a
+					INNER JOIN (
+						SELECT CEIL((`dateTime`+6*60*60)/(3600.0*12.0))*3600*12 AS `dtUTC2`, MAX(`outTemp`) AS `Tx12h`
+						FROM $db_table
+						WHERE `dateTime` >= $tsStart12h AND `dateTime` <= $tsStop
+						GROUP BY `dtUTC2`
+					) b
+					ON CEIL((a.`dateTime`+6*60*60)/(3600.0*12.0))*3600*12 = b.`dtUTC2` AND b.`Tx12h` = a.`outTemp`
+					WHERE `dateTime` >= $tsStart12h AND `dateTime` <= $tsStop
+					ORDER BY `a`.`dateTime` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$Tx12h   = null;
+			$TxDt12h = null;
+			$row['ts'] = (string)round($row['ts']);
+			if (!is_null ($row['outTemp'])) {
+				if ($unit == '1') {
+					$Tx12h = round(($row['outTemp']-32)/1.8,1);
+				}elseif ($unit == '16' || $unit == '17') {
+					$Tx12h = round($row['outTemp'],1);
+				}
+				$TxDt12h = date('Y-m-d H:i:s',$row['dateTime']);
+			}
+			// Insertion dans le tableau des données
+			// Sauf que notre résultat comprend des doublons (plusieurs rafales max identique dans la même heure), donc on n'insert que si la valeur n'a pas déjà été enregistrée pour cette même KEY (ts) == On garde donc seulement la première rafale max
+			if (!isset($csvTab [$row['ts']] ['Tx12h'])) {
+				$csvTab [$row['ts']] ['Tx12h'] = $Tx12h;
+				$csvTab [$row['ts']] ['TxDt12h'] = $TxDt12h;
+			}
+		}
+	}
+
+// PARAMS RR cumuls sur 12h
+	// On remonte sur 24h avant le tsStart pour être sur d'avoir au moins 12 h avant
+	$tsStart12h = $tsStart-(24*3600);
+	$query_string = "SELECT CEIL(`dateTime`/3600.0)*3600 AS `ts`,
+						SUM(`rain`) AS `rainCumul1h`
+						FROM archive
+						WHERE `dateTime` >= $tsStart12h AND `dateTime` <= $tsStop
+						GROUP BY `ts`
+						ORDER BY `ts` ASC;";
+	$result       = $db_handle_pdo->query($query_string);
+
+	if (!$result and $debug) {
+		// Erreur et debug activé
+		echo "Erreur dans la requete ".$query_string."\n";
+		echo "\nPDO::errorInfo():\n";
+		print_r($db_handle_pdo->errorInfo());
+		exit("Erreur.\n");
+	}
+	if ($result) {
+		$Rr12hArray = null;
+		$Rr12hArray2 = null;
+		while($row = $result->fetch(PDO::FETCH_ASSOC)) {
+			$row['ts'] = (string)round($row['ts']);
+			if (!is_null($row['rainCumul1h'])) {
+				$Rr12hArray [$row['ts']] ['dtUtcRr1h'] = date('Y-m-d H:i:s',$row['ts']);
+				$Rr12hArray [$row['ts']] ['Rr1h'] = $row['rainCumul1h'];
+			}
+		}
+		// print_r($Rr12hArray);
+		$Rr12hTemp = null;
+		foreach($Rr12hArray as $datetime => $valeurs) {
+			if (date('H:i:s',$datetime) == '06:00:00' OR date('H:i:s',$datetime) == '18:00:00') {
+				// echo "06h ou 18h : ".date('Y-m-d H:i:s',$datetime)." \n";
+				if ($datetime < $tsStart12h+12*3600) {
+					// echo "Supression d'une valeur trop vieille.\n";
+					// echo date('Y-m-d H:i:s',$datetime)."\n";
+					continue;
+				} else {
+					$Rr12hTemp2 = null;
+					foreach($Rr12hArray as $datetime2 => $valeurs2) {
+						// Si supérieur à 12h en arrière et si inférieur ou égale à celui sélectionné
+						if($datetime2 > $datetime-12*3600 && $datetime2 <= $datetime) {
+							$Rr12hTemp2 = $Rr12hTemp2 + $valeurs2['Rr1h'];
+						}
+					}
+					if (!is_null($Rr12hTemp2)) {
+						$Rr12hArray2 [$datetime] ['Rr12h'] = $Rr12hTemp2;
+					}
+				}
+			}
+		}
+		foreach($Rr12hArray2 as $datetime => $valeurs) {
+			if (!is_null ($valeurs['Rr12h'])) {
+				if ($unit == '1') {
+					$rainCumul12h = round($valeurs['Rr12h']*25.4,1);
+				}elseif ($unit == '16') {
+					$rainCumul12h = round($valeurs['Rr12h']*10,1);
+				}elseif ($unit == '17') {
+					$rainCumul12h = round($valeurs['Rr12h'],1);
+				}
+				$csvTab [$datetime] ['rainCumul12h'] = $rainCumul12h;
+			}
+		}
+	}
+
+	if ($debug) {
+		print_r($csvTab);
+	}
+
+// Insert dans le fichier CSV
+	$fieldsNumber = count($csvTab['header']);
 	$csvFile = $repository."/weewxPosteriori_".$id_station.".csv";
 	$fp      = fopen($csvFile, 'w');
-	foreach ($prepareCSV as $fields) {
-		fputcsv($fp, $fields);
+	fputcsv($fp,array_keys($csvTab['header']));
+	foreach($csvTab as $k => $fields) {
+		if (!isset($fields['dtUTC'])) continue;
+		if ($k === 'header') continue;
+		if ($k > $tsStop || $k < $tsStart) continue;
+		$w = 0;
+		foreach($csvTab['header'] as $fieldName => $_dummy) {
+			$ligne = @$fields[$fieldName];
+			$w ++;
+			if ($w != $fieldsNumber) $ligne = $ligne.",";
+			fwrite($fp, $ligne);
+		}
+		fwrite($fp, "\n");
 	}
 	$fcloseOK = fclose($fp);
 
@@ -1211,12 +1053,11 @@
 		}
 	}
 
-	// FIN
+
+// FIN
 	$timeEndScript        = microtime(true);
 	$timeGenerationScript = $timeEndScript - $timeStartScript;
 	$pageLoadTime         = number_format($timeGenerationScript, 3);
 	if ($debug) {
 		echo "Execution en ".$pageLoadTime."secondes".PHP_EOL;
 	}
-
-?>

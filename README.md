@@ -43,10 +43,10 @@ Le fichier CSV de sortie comprend de nombreuses colonnes dont voici le descripti
 * ``radiationMax10m``, --> le rayonnement max sur les 10 dernières minutes
 * ``UvMax10m``, --> l'UV max sur les 10 dernières minutes  
 --
-* ``windGustMax1h``, --> la rafale de vent max sur une heure (si intervalle de une heure, c'est sur l'heure glissante, si intervalle de 10 minutes, c'est aussi sur l'heure glissante) (cf norme OMM)
+* ``windGustMax1h``, --> la rafale de vent max sur une heure
 * ``windGustMaxDir1h``, --> la direction de la rafale de vent max selectionnée dans le paramètre précédent
 * ``windGustMaxdt1h``, --> l'heure exacte (UTC) de la rafale de vent max selectionnée dans le paramètre précédent
-* ``windGustMax10m``, --> la rafale de vent max sur les dix dernières minutes (peu importe la configuration de l'intervalle) (cf norme OMM)
+* ``windGustMax10m``, --> la rafale de vent max sur les dix dernières minutes
 * ``windGustMaxDir10m``, --> la direction de la rafale de vent max sur les dix dernières minutes, selectionnée dans le paramètre précédent
 * ``windGustMaxdt10m``, --> l'heure exacte (UTC) de la rafale de vent max sur les dix dernières minutes selectionnée dans le paramètre précédent
 * ``windSpeedAvg10m``, --> la moyenne du vent moyen des dix dernières minutes
@@ -59,14 +59,13 @@ Le fichier CSV de sortie comprend de nombreuses colonnes dont voici le descripti
 * ``radiationMax1h``, --> le rayonnement max sur la dernière heure
 * ``UvMax1h``, --> l'UV max sur la dernière heure  
 --
-* ``Tn12h``, --> la température minimale sur les 12 dernière heure
-* ``Tx12h``, --> la température maximale sur les 12 dernière heure
-* ``rainCumul3h``, --> le cumul de pluie sur les 3 dernières heures
-* ``rainCumul6h``, --> le cumul de pluie sur les 6 dernières heures
+* ``Tn12h``, --> la température minimale sur les 12 dernières heures
+* ``TnDt12h``, --> l'heure de la température minimale des 12 dernières heures
+* ``Tx12h``, --> la température maximale sur les 12 dernières heures
+* ``TxDt12h``, --> l'heure de la température maximale des 12 dernières heures
 * ``rainCumul12h``, --> le cumul de pluie sur les 12 dernières heures
 * ``rainCumul24h``, --> le cumul de pluie sur les 24 dernières heures
-* ``rainCumulMonth``, --> le cumul de pluie sur le mois en cours (depuis minuit UTC du 1er du mois (non inclus) jusqu'à l'enregistrement en cours INCLUS (``dateTime``))
-* ``rainCumulYear`` --> le cumul de pluie sur l'année en cours (depuis minuit UTC du 1er janvier (non inclus) jusqu'à l'enregistrement en cours INCLUS(``dateTime``))
+* ``rainCumulYear`` --> le cumul de pluie sur l'année en cours (depuis minuit UTC du 1er janvier INCLUS jusqu'à l'enregistrement en cours INCLUS(``dateTime``))
 
 
 ## Installation
@@ -100,9 +99,7 @@ nano config.php
 > ``$periodeRecup`` permet d'inquer la période couverte par le script, c'est à dire sur combien de temps en arrière on souhaite retourner pour la génération du fichier. Au choix entre une heure et XXX jours. Doit **absolument** être en secondes.
 Exemple pour une période de 2 heures il faudra indiquer ``2 * 3600``, ou pour une période de trois jours ``3 * 24 * 3600``
 
-> ``$intervalRecup`` permet d'indiquer l'intervalle de temps voulu entre chaque enregistrement pour la génération du fichier. **Deux options possibles : 10 minutes, ou 60 minutes**
-
-> La combinaison des deux permet d'affiner le type de récupération/envoi voulu. Plus on augmente la période de récupération (et surtout si l'intervalle de récup est configuré à 10 minutes), plus le fichier sera lourd. A prendre en compte sur des installations avec débit Internet réduit.
+> Cela permet d'affiner le type de récupération/envoi voulu. Plus on augmente la période de récupération, plus le fichier sera lourd. A prendre en compte sur des installations avec débit Internet réduit.
 
 **Type de base de données**
 > Ici il faut renseigné le type de base de données utilisé par votre instance de WeeWX.
@@ -195,14 +192,14 @@ Pour l'automatiser une seule fois par jour à 23h01 :
 
 Il vous est également possible de faire fonctionner ce script sans utiliser le fichier de configuration, et en entrant toute la configuration en paramètre de la ligne de commande.  
 
-Exemple pour un fonctionnement normal sans debug pour obtenir un fichier sur les deux dernières heures (intervalle de 10 minutes) depuis une base de données MySQL et sans envoi FTP
+Exemple pour un fonctionnement normal sans debug pour obtenir un fichier sur les deux dernières heures depuis une base de données MySQL et sans envoi FTP
 ```
-php /home/pi/weewxPosteriori/weewxPosteriori.php --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --intvl-recup=10 --id-station="id_station" --repo-csv="/dev/shm/"
+php /home/pi/weewxPosteriori/weewxPosteriori.php --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --id-station="id_station" --repo-csv="/dev/shm/"
 ```
 
-Exemple avec du debug pour obtenir un fichier sur les deux dernières heures (intervalle de 10 minutes) depuis une base de données MySQL et avec envoi FTP
+Exemple avec du debug pour obtenir un fichier sur les deux dernières heures depuis une base de données MySQL et avec envoi FTP
 ```
-php /home/pi/weewxPosteriori/weewxPosteriori.php --debug --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --intvl-recup=10 --id-station="id_station" --repo-csv="/dev/shm/" --ftp-enable --ftp-server="ftp.infoclimat.fr" --ftp-user="pseudo" --ftp-pass="passe"
+php /home/pi/weewxPosteriori/weewxPosteriori.php --debug --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --id-station="id_station" --repo-csv="/dev/shm/" --ftp-enable --ftp-server="ftp.infoclimat.fr" --ftp-user="pseudo" --ftp-pass="passe"
 ```
 
 ## Mise à jour du script
@@ -253,3 +250,11 @@ C'est tout, le script est de nouveau fonctionnel !
 * V1.3 - 2020.03.19
 	* Modification de la structure et des types de paramètres calculés (maintenant quasiment tous les paramètres sont calculés sur 10 min et sur 1 heure, quel que soit l'intervalle de récup voulu)
 	* @ToDo : réduire le nombre de requêtes et boucles pour améliorer les performances
+
+* V1.99 - 2020.03.25
+	* Réécriture complète pour améliorer les performances
+		* Beaucoup moins de requêtes SQL
+		* Utilisation de PDO pour gérer en même temps MySQL et SQLite (plus ou moins...)
+		* Génération de 72h d'archives sur un intervalle de 10 minutes en moins de 4 secondes contre 120 secondes en V1.3
+	* Modification des champs calculés (suppression de champs inutiles)
+	* Suppression du paramètre d'intervalle de récupération voulu. Le fichier CSV de sortie comprendra forcément un relevé (une ligne) toutes les 10 minutes

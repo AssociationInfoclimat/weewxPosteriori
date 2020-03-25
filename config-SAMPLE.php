@@ -5,7 +5,7 @@
  * MySQL, avec détection auto des unités et conversion
 */
 
-// VERSION : V1.3
+// VERSION : V1.99
 
 /*
  * Pour lancer le script, après avoir modifier les valeurs par défaut du fichier de configuration -ci-dessous- : 
@@ -18,17 +18,16 @@
 /*
  * En CLI :
  * En fonctionnement normal sans debug pour un fichier sur les deux dernières heures (interval de 10 minutes) :
- * php /home/pi/weewxPosteriori/weewxPosteriori.php --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --intvl-recup=10 --id-station="id_station" --repo-csv="/dev/shm/"
+ * php /home/pi/weewxPosteriori/weewxPosteriori.php --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --id-station="id_station" --repo-csv="/dev/shm/"
  * 
  * Pour avoir du debug :
- * php /home/pi/weewxPosteriori/weewxPosteriori.php --debug --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --intvl-recup=10 --id-station="id_station" --repo-csv="/dev/shm/"
+ * php /home/pi/weewxPosteriori/weewxPosteriori.php --debug --db-type=mysql --db-host=localhost --db-user="user" --db-pass="pass" --db-name="db_name" --db-table="archive" --periode-recup=7200 --id-station="id_station" --repo-csv="/dev/shm/"
  * 
 */
 
 // CONFIG DEBUG & RECUP
 	$debug         = True;           // True ou False
 	$periodeRecup  = 2 * 3600;       // Doit être en secondes | Par défaut = 2 heures
-	$intervalRecup = 10;             // 10 ou 60 : doit être en minutes | Par défaut à 10 minutes quand récup sur quelques heures, pourra éventuellement être passé à 60 pour une récup de plusieurs jours
 
 // CONFIG BDD & FILES
 
