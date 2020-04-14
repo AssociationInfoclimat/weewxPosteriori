@@ -40,7 +40,7 @@
 
 	// Récup des params en CLI ou dans le fichier de conf ?
 
-	// Debug CLI
+// Debug CLI
 	if (isset($paramsCli['debug'])) {
 		$debug = True;
 	} else {
@@ -51,7 +51,7 @@
 		var_dump($paramsCli);
 	}
 
-	// Type BDD CLI
+// Type BDD CLI
 	if (!isset($paramsCli['db-type'])) {
 		if ($debug) {
 			echo "Info : Type de BDD non précisé, les autres paramètres de la ligne de commande sont ignorés : utilisation du fichier de conf".PHP_EOL.PHP_EOL;
@@ -423,7 +423,7 @@
 					`rainRate` AS `rainRateNow`,
 					`radiation` AS `radiationNow`,
 					`UV` AS `UvNow`
-				FROM `archive`
+				FROM $db_table
 				WHERE `dateTime` % 600 = 0
 				AND `dateTime` >= $tsStart
 				AND `dateTime` <= $tsStop;";
@@ -820,7 +820,7 @@
 		echo "Erreur dans la requete ".$query_string."\n";
 		echo "\nPDO::errorInfo():\n";
 		print_r($db_handle_pdo->errorInfo());
-		exit("Erreur dans la récupération des params sur 10 minutes de la station.\n");
+		exit("Erreur.\n");
 	}
 	if ($result) {
 		// Construction du tableau
@@ -948,7 +948,7 @@
 	$tsStart12h = $tsStart-(24*3600);
 	$query_string = "SELECT CEIL(`dateTime`/3600.0)*3600 AS `ts`,
 						SUM(`rain`) AS `rainCumul1h`
-						FROM archive
+						FROM $db_table
 						WHERE `dateTime` >= $tsStart12h AND `dateTime` <= $tsStop
 						GROUP BY `ts`
 						ORDER BY `ts` ASC;";
